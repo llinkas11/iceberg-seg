@@ -22,14 +22,12 @@ Usage:
 
 import argparse
 import csv
-import hashlib
 import json
 import os
 import pickle
 import random
 import re
 import shutil
-import subprocess
 from collections import defaultdict
 from datetime import datetime, timezone
 from glob import glob
@@ -39,6 +37,8 @@ import rasterio
 from rasterio.transform import Affine
 from PIL import Image, ImageDraw
 from scipy.ndimage import label as cc_label
+
+from _method_common import get_git_sha, sha256_of_file, sha256_of_text
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 SMISHRA = "/mnt/research/v.gomezgilyaspik/students/smishra/rework"
@@ -162,36 +162,8 @@ def load_met_data(csv_path):
 
 
 # ---------------------------------------------------------------------------
-# Manifest + hashing helpers
+# Manifest helpers (hashing + git SHA now live in _method_common)
 # ---------------------------------------------------------------------------
-
-def sha256_of_file(path, chunk=1 << 20):
-    """Return hex sha256 of file bytes. Returns None if path is empty / missing."""
-    if not path or not os.path.exists(path):
-        return None
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for block in iter(lambda: f.read(chunk), b""):
-            h.update(block)
-    return h.hexdigest()
-
-
-def sha256_of_text(text):
-    """Return hex sha256 of a string."""
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def get_git_sha(repo_dir):
-    """Return short git SHA for repo_dir, or None if not a git repo."""
-    try:
-        out = subprocess.check_output(
-            ["git", "-C", repo_dir, "rev-parse", "--short", "HEAD"],
-            stderr=subprocess.DEVNULL,
-        )
-        return out.decode().strip()
-    except Exception:
-        return None
-
 
 def build_manifest_chip_rows(all_chips, train_idx, val_idx, test_idx):
     """

@@ -31,7 +31,10 @@ import geopandas as gpd
 from shapely.geometry import shape
 import pandas as pd
 
-from _method_common import write_method_config, write_skipped_chips
+from _method_common import (
+    write_method_config, write_skipped_chips,
+    SKIP_TOO_FEW_PROB_BANDS, SKIP_FLAT_PROB, SKIP_IC_BLOCK_FILTER,
+)
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -69,7 +72,7 @@ def main():
             meta  = src.meta.copy()
 
         if probs.shape[0] <= ICEBERG_BAND:
-            skipped.append({"chip_stem": stem, "reason": "too_few_prob_bands",
+            skipped.append({"chip_stem": stem, "reason": SKIP_TOO_FEW_PROB_BANDS,
                             "n_bands": probs.shape[0]})
             continue
 
@@ -79,7 +82,7 @@ def main():
         # Otsu needs a bimodal distribution, so skip chips with flat prob
         if flat.max() - flat.min() < 0.01:
             print(f"  [{i+1:>4}/{len(prob_files)}] SKIP (flat prob)  {stem[:60]}")
-            skipped.append({"chip_stem": stem, "reason": "flat_prob",
+            skipped.append({"chip_stem": stem, "reason": SKIP_FLAT_PROB,
                             "prob_range": f"{float(flat.max() - flat.min()):.4f}"})
             continue
 
@@ -87,7 +90,7 @@ def main():
         ic_frac = float((iceberg_prob >= thresh).mean())
         if ic_frac > args.ic_threshold:
             print(f"  [{i+1:>4}/{len(prob_files)}] SKIP (IC-filtered ic_frac={ic_frac:.2f})  {stem[:50]}")
-            skipped.append({"chip_stem": stem, "reason": "ic_block_filter",
+            skipped.append({"chip_stem": stem, "reason": SKIP_IC_BLOCK_FILTER,
                             "otsu_thresh": f"{thresh:.4f}",
                             "ic_frac":     f"{ic_frac:.4f}"})
             continue

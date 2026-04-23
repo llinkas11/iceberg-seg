@@ -18,7 +18,6 @@ Metrics (iceberg class only, binary: iceberg=1 vs not-iceberg=0):
 
 import argparse
 import csv
-import json
 import os
 import pickle
 import warnings
@@ -31,6 +30,8 @@ from rasterio.features import rasterize as rio_rasterize
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+from _method_common import load_manifest
 
 warnings.filterwarnings("ignore")
 
@@ -75,17 +76,40 @@ def load_test_ground_truth(pkl_dir, test_index_path):
 
     gt = []
     for k, row in test_index.iterrows():
-        mask = (Y_test[k] == ICEBERG_CLASS).astype(np.uint8)
-        gt.append({
-            "pkl_position": int(row["pkl_position"]),
-            "sza_bin": row["sza_bin"],
-            "chip_stem": row["chip_stem"],
-            "tif_path": row["tif_path"],
-            "mask": mask,
-        })
+        gt.append(_build_gt_record(
+            int(row["pkl_position"]), row["sza_bin"], row["chip_stem"],
+            row["tif_path"], Y_test[k],
+        ))
 
     print(f"Ground truth loaded: {len(gt)} test chips")
     return gt
+
+
+def _build_gt_record(pkl_position, sza_bin, chip_stem, tif_path, y_row):
+    """
+    Assemble one gt record and cache the chip's transform, crs, and shape on
+    it so eval_method does not reopen the tif for each of the six methods.
+    That trims ~1400 rio.open calls per evaluation run.
+    """
+    mask = (y_row == ICEBERG_CLASS).astype(np.uint8)
+    transform, crs, height, width = None, None, None, None
+    if tif_path and os.path.exists(tif_path):
+        with rio.open(tif_path) as src:
+            transform = src.transform
+            crs       = src.crs
+            height    = src.height
+            width     = src.width
+    return {
+        "pkl_position": pkl_position,
+        "sza_bin":      sza_bin,
+        "chip_stem":    chip_stem,
+        "tif_path":     tif_path,
+        "mask":         mask,
+        "transform":    transform,
+        "crs":          crs,
+        "height":       height,
+        "width":        width,
+    }
 
 
 def load_test_ground_truth_from_manifest(manifest_path, pkl_dir=None):
@@ -96,10 +120,9 @@ def load_test_ground_truth_from_manifest(manifest_path, pkl_dir=None):
     its tif (pixel value > 0 on any band, heuristic, not used today; reserved
     for a future pure-geotiff-GT branch).
     """
-    with open(manifest_path) as f:
-        manifest = json.load(f)
-    print(f"Manifest: {manifest.get('manifest_id')} "
-          f"chips_sha={manifest.get('chips_sha', 'n/a')[:16]}...")
+    manifest = load_manifest(manifest_path)
+    print(f"Manifest: {manifest['manifest_id']} "
+          f"chips_sha={manifest['chips_sha'][:16]}...")
 
     test_rows = [r for r in manifest["chips"] if r.get("split") == "test"]
     test_rows.sort(key=lambda r: r["pkl_position"])
@@ -121,14 +144,10 @@ def load_test_ground_truth_from_manifest(manifest_path, pkl_dir=None):
 
     gt = []
     for k, row in enumerate(test_rows):
-        mask = (Y_test[k] == ICEBERG_CLASS).astype(np.uint8)
-        gt.append({
-            "pkl_position": int(row["pkl_position"]),
-            "sza_bin":      row["sza_bin"],
-            "chip_stem":    row["chip_stem"],
-            "tif_path":     row.get("tif_path", ""),
-            "mask":         mask,
-        })
+        gt.append(_build_gt_record(
+            int(row["pkl_position"]), row["sza_bin"], row["chip_stem"],
+            row.get("tif_path", ""), Y_test[k],
+        ))
     print(f"Ground truth loaded: {len(gt)} test chips (from manifest)")
     return gt
 
@@ -291,12 +310,14 @@ def eval_method(method, test_dir, gt_records, skip_policy="count_as_false_negati
         tif_path = rec["tif_path"]
         gt_mask = rec["mask"]
 
-        transform, crs = get_chip_transform(tif_path)
+        transform = rec["transform"]
+        crs       = rec["crs"]
+        height    = rec["height"]
+        width     = rec["width"]
         if transform is None:
             print(f"  WARNING: no chip .tif for {chip_stem} in {sza_bin}, skipping")
             continue
 
-        height, width = get_chip_shape(tif_path)
         was_skipped = chip_stem in skipped_by_bin.get(sza_bin, set())
 
         if was_skipped and skip_policy == "exclude":

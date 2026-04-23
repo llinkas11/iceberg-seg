@@ -15,7 +15,6 @@ import json
 import pickle
 import random
 import argparse
-import subprocess
 from datetime import datetime, timezone
 
 import numpy as np
@@ -25,6 +24,8 @@ from torch.utils.data import Dataset, DataLoader
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import segmentation_models_pytorch as smp
+
+from _method_common import get_git_sha
 
 
 # ---------------------------------------------------------------------------
@@ -168,20 +169,8 @@ def run_epoch(model, loader, optimizer, criterion_dice, criterion_ce,
 
 
 # ---------------------------------------------------------------------------
-# Run provenance
+# Run provenance (get_git_sha comes from _method_common)
 # ---------------------------------------------------------------------------
-
-def get_git_sha(repo_dir):
-    """Return short git SHA for repo_dir, or None if not a git repo."""
-    try:
-        out = subprocess.check_output(
-            ["git", "-C", repo_dir, "rev-parse", "--short", "HEAD"],
-            stderr=subprocess.DEVNULL,
-        )
-        return out.decode().strip()
-    except Exception:
-        return None
-
 
 def get_manifest_id(data_dir):
     """Look for data_dir/manifest.json and return its manifest_id, else None."""

@@ -12,9 +12,6 @@ rules:
     source_filter:   our_lt65    # only operate on our-lt65 source chips
   sza_bins:          [sza_lt65]
 
-invariants:
-  val_unchanged:  true
-  test_unchanged: true
 
 implementation:
   module: scripts/balance_training.py

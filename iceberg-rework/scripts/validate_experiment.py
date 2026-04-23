@@ -35,7 +35,6 @@ import json
 import os
 import sys
 
-# yaml is an external dep, but already installed in the iceberg-unet venv.
 import yaml
 
 

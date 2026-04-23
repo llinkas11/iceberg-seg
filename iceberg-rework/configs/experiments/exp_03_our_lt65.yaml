@@ -9,7 +9,6 @@ inherits: baseline_v1
 change:
   data:
     manifest_id: our_lt65
-    source:      our_lt65
 
 notes: |
   Compare against baseline_v1 to see how our-lt65 alone performs vs the

@@ -34,10 +34,11 @@ rsync:
 
 import argparse
 import csv
-import json
 import os
 from collections import defaultdict
 from glob import glob
+
+from _method_common import load_manifest
 
 SZA_BINS  = ["sza_lt65", "sza_65_70", "sza_70_75", "sza_gt75"]
 RESEARCH  = "/mnt/research/v.gomezgilyaspik/students/smishra/S2-iceberg-areas"
@@ -87,11 +88,9 @@ def main():
 
     # -- Preferred path: manifest.json ----------------------------------------
     if args.manifest and os.path.exists(args.manifest):
-        with open(args.manifest) as f:
-            manifest = json.load(f)
-
-        print(f"Using manifest: {args.manifest}  id={manifest.get('manifest_id')}")
-        print(f"Chips_sha: {manifest.get('chips_sha', 'n/a')[:16]}...")
+        manifest = load_manifest(args.manifest)
+        print(f"Using manifest: {args.manifest}  id={manifest['manifest_id']}")
+        print(f"Chips_sha: {manifest['chips_sha'][:16]}...")
 
         n_ok      = 0
         n_missing = 0

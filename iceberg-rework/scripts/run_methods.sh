@@ -74,11 +74,15 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPTS="$REPO_DIR/scripts"
 PY="${PY:-/home/llinkas/.venvs/iceberg-unet312/bin/python}"
 if [[ ! -x "$PY" ]]; then
-    PY="$(command -v python3)"
+    echo "ERROR: python interpreter not found at $PY" >&2
+    echo "       set PY=... in the environment before calling run_methods.sh" >&2
+    exit 4
 fi
 
-MANIFEST_ID=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1]))['manifest_id'])" "$MANIFEST")
-CHIPS_SHA=$("$PY"  -c "import json,sys; print(json.load(open(sys.argv[1]))['chips_sha'])"   "$MANIFEST")
+# One subprocess instead of two; tab-separated so IFS splits cleanly.
+read -r MANIFEST_ID CHIPS_SHA < <(
+    "$PY" -c "import json,sys; m=json.load(open(sys.argv[1])); print(m['manifest_id'], m['chips_sha'])" "$MANIFEST"
+)
 
 echo "==================================================="
 echo "Manifest   : $MANIFEST  (id=$MANIFEST_ID)"

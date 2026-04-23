@@ -11,9 +11,6 @@ rules:
   drop_gt_zero: true
   sza_bins:     all
 
-invariants:
-  val_unchanged:  true
-  test_unchanged: true
 
 implementation:
   # Existing Python entrypoint that already implements this exact behaviour.

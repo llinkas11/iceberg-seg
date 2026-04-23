@@ -10,9 +10,6 @@ rules:
     count:       114
     stratify_by: [sza_bin, has_iceberg]
 
-invariants:
-  val_unchanged:  true
-  test_unchanged: true
 
 notes: |
   Used to match Fisser 2024's reported training-set size exactly. Stratified

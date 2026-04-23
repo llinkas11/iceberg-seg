@@ -39,7 +39,9 @@ import pandas as pd
 # crf_utils.py must be in the same directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from crf_utils import apply_densecrf
-from _method_common import write_method_config, write_skipped_chips
+from _method_common import (
+    write_method_config, write_skipped_chips, SKIP_CHIP_TIF_MISSING,
+)
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -111,7 +113,7 @@ def main():
         chip_path = find_chip(args.chips_dir, stem)
         if chip_path is None:
             print(f"  [{i+1:>4}/{len(prob_files)}] NO CHIP  {stem[:60]}")
-            skipped.append({"chip_stem": stem, "reason": "chip_tif_not_found"})
+            skipped.append({"chip_stem": stem, "reason": SKIP_CHIP_TIF_MISSING})
             continue
 
         with rio.open(prob_path) as src:
@@ -121,7 +123,6 @@ def main():
         with rio.open(chip_path) as src:
             chip = src.read().astype(np.float32)    # (3, H, W)
 
-        # apply_densecrf from crf_utils.py, single chip, not batched
         refined = apply_densecrf(probs, chip, params)  # (H, W) uint8
 
         mask = (refined == 1).astype(np.uint8)   # iceberg class
@@ -168,7 +169,7 @@ def main():
     else:
         print("\nNo icebergs detected.")
 
-    n_no_chip = sum(1 for r in skipped if r["reason"] == "chip_tif_not_found")
+    n_no_chip = sum(1 for r in skipped if r["reason"] == SKIP_CHIP_TIF_MISSING)
     if n_no_chip:
         print(f"Skipped (no chip): {n_no_chip}")
     print(f"Method config    : {cfg_path}")

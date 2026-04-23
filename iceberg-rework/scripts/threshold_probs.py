@@ -29,7 +29,9 @@ import geopandas as gpd
 from shapely.geometry import shape
 import pandas as pd
 
-from _method_common import write_method_config, write_skipped_chips
+from _method_common import (
+    write_method_config, write_skipped_chips, SKIP_TOO_FEW_PROB_BANDS,
+)
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -68,7 +70,7 @@ def main():
             meta  = src.meta.copy()
 
         if probs.shape[0] <= ICEBERG_BAND:
-            skipped.append({"chip_stem": stem, "reason": "too_few_prob_bands",
+            skipped.append({"chip_stem": stem, "reason": SKIP_TOO_FEW_PROB_BANDS,
                             "n_bands": probs.shape[0]})
             continue
 
