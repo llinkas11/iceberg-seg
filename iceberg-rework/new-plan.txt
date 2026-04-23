@@ -1,0 +1,73 @@
+rework _folder: 
+	•	With a read me 
+
+
+Information: 
+	•	File paths: 
+	◦	<65 SZA bin: 
+	◦	>65 SZA bin: 
+	•	Most recent/best Model training script (to train with hflip, vflip, rot): 
+
+
+Cleaning the data 
+	1	Ice coverage IC >= 15% (we do 15%)
+	2	Cloud coverage < 2% (we do 1% which works)
+	3	calculate # of m2 in a pixel in a chip
+	•	Remove <40 m root length or 1600m2 area (because Fisser 2025 dataset uses this as a cutoff we want our data to be comparable) 
+	◦	Visualize what this looks like to decide if we want to re annotate stuff on roboflow 
+	4	Visualize if we missed icebergs >40m smaller than 500m (?)  root length? 
+	1	Consider using the threshold contrast here it would probably reduce land and sea ice getting annotated 
+	2	Don’t allow reannotation overlapping existing annotation 
+	1	ROBOFLOW 2.0???? 
+	5	Calculate how many images were collected at: (download from copernicus and match to images then to chips)
+	1	Avg Wind speed >= 15 m/s 
+	2	Avg Temperature > 0°C
+	1	“We downloaded the Arctic Regional Reanalysis (CARRA) product (schyberg et al., 2020 from the Copernicus Climate Change Service (C3S) climate Data Store (2021), providing a 2.5 km in three-hourly timestamps. CARRA relies on the HARMONIE-AROME cycle 40h1.1 with vertical forcing by168 ERA5 (Køltzow et al., 2022). The 10 m wind speed and the 2 m air tem-perature variables were collected at the timestamps that minimized the time difference to the respective Sentinel-1 acquisition.”
+	2	Evaluate whether we should remove anything >15m/s or temp >0°C after seeing the distribution of images across wind speed and temp 
+	3	If there are not a lot of these, consider removing them. Else consider it a confounding factor & mention (removal good if we want to isolate effect of SZA only)
+
+Descriptive Statistics/Exploratory Analysis before retraining model: 
+	1	Relative abundance of: 
+	1	n(0) : n(>1) : n(>5) →  where n = # of icebergs in a chip 
+	6	Visual histogram checks: → coloured by SZA bin
+	1	Count v month 
+	2	Count by wind speed 
+	3	Count by temperature 
+	4	Count by ice berg area 
+	7	Check against Fisser (2025) findings: 
+	•	Power law distribution was seen between iceberg area and count 
+	•	Avg iceberg area = 2468m2 (RL 140m)
+	•	max iceberg Area = 399700m2 (RL 632m)
+
+Balancing the dataset between bins 
+	8	75% train 25% testing split
+	9	Check overabundance to underabundance 
+	1	No validation data should be balanced only training data 
+	1	“n was found in the area bin > 90000 m2. For HH (HV), n was 69 (75). We represented every area bin by at least nmin = 3· nicebergs, and by a maximum of nmax = 6· n icebergs. Bins with less than nmin samples were over-sampled by replicating all samples as often as they fit into nmin. To fill up, additional samples were randomly drawn until nmin was reached. Thus, the area bin > 90000 m2 is replicated 3 times The ratio between the most abundant bin and the least abundant bin is therefore 2:1 in the training dataset. As there is no recommended value for this ratio, we chose a value that keeps a reasonable amount of samples in the high abundance bins without too strongly over-sampling the low abundance bins. Data was unaffected, as it was separated prior to balancing the dataset. Using the validation data, we compared predictions based on training with and without considering balancing. The balancing decreased the overall performance in terms of the MAE, however, the models generalized better across the iceberg size range. We thus opted for training the models based on the balanced dataset. “(Fisser 2025)
+	2	Then retrain the unet on augmentation that was the best & run the comparison scripts for our different evals
+	3	Balance to a 2:1 ratio (over-abundance : under-abundance) relative to the distribution we observed initially per bin (ie. if there is an overabundance of null images and underabundance of iceberg annotated images, then balance to ratio of 2 null images for every 1 iceberg annotated image AND if there is an overabundance of iceberg annotated images and underabundance of null annotated images, then balance to ratio of 2 annotated iceberg images for every 1 null annotated image)
+	4	Check against mean absolute error? 
+
+Retrain Model:
+	•	Only on the 75% training data, leave out 25%
+	◦	make sure that the 75% and 25% have an even distribution (per bin and between validation and test sets) of:
+	▪	Ice berg size / root length
+	▪	Null chips vs iceberg containing chips
+	▪	Wind speed/temperature??? Decide post cleanup 
+	•	Augmentations = hflip, vflip, rot ←- only on training data, not testing data 
+
+TBD:
+
+Evaluation Metrics: 
+	10	Mean absolute error (MAE) 
+	11	Contrast (threshold of background versus foreground) 
+	12	Catboost algorithm? 
+	13	Dynamic thresholding 
+	14	Relative error for root length between annotations and predictions (RERL)
+	15	Intersection over union (and/or IoU by complement)
+
+Check against Fisser (2025): 
+	•	He found iceberg size and backscatter had a weak relationship, with bias towards larger icebergs 
+	•	Relationship between: 
+	◦	backscatter and RERL
+	◦	Contrast and RERL

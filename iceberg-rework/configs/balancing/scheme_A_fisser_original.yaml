@@ -1,0 +1,27 @@
+# scheme_A_fisser_original: drop GT0 training chips entirely.
+#
+# Reproduces the Fisser-style "positive-only lt65 training set". val and test
+# are copied unchanged from the input manifest; only training rows with
+# has_iceberg=false are removed.
+
+id: scheme_A_fisser_original
+stage: train_only
+
+rules:
+  drop_gt_zero: true
+  sza_bins:     all
+
+invariants:
+  val_unchanged:  true
+  test_unchanged: true
+
+implementation:
+  # Existing Python entrypoint that already implements this exact behaviour.
+  module: scripts/build_gt_positive_training.py
+  entry:  main
+
+notes: |
+  Equivalent to running scripts/build_gt_positive_training.py against the
+  source manifest. scripts/build_gt_positive_training.py writes a new
+  materialised data variant; a future strategy class will consume the source
+  manifest and emit a new balanced manifest without re-pickling the arrays.
