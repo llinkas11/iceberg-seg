@@ -1,16 +1,17 @@
 """
-_method_common.py: shared helpers for the six iceberg-segmentation methods.
+_method_common.py: helpers shared across the six method scripts, the manifest
+builder, the trainer, and the evaluator.
 
-Each method (threshold, otsu, unet, threshold-on-probs, otsu-on-probs, crf)
-writes two provenance files into its output dir so evaluation and later audits
-can reconstruct exactly what was run:
+Provenance writers for method runs:
+  write_method_config  emit method_config.json with every parameter used
+  write_skipped_chips  emit skipped_chips.csv, one row per refused chip
 
-  method_config.json   every parameter the method used
-  skipped_chips.csv    one row per chip the method refused to score, with a
-                       reason string such as "otsu_floor" or "too_few_bands"
+Skip-reason constants:
+  SKIP_TOO_FEW_BANDS, SKIP_TOO_FEW_PROB_BANDS, SKIP_IC_BLOCK_FILTER,
+  SKIP_OTSU_FLOOR, SKIP_FLAT_PROB, SKIP_CHIP_TIF_MISSING
 
-Both are written at the end of the run; a method may accumulate skip events as
-it processes chips and flush them in one call.
+Hashing + manifest + git helpers (used by build_clean_dataset + train):
+  load_manifest, sha256_of_file, sha256_of_text, get_git_sha
 """
 
 import csv

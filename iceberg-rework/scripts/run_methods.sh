@@ -79,7 +79,7 @@ if [[ ! -x "$PY" ]]; then
     exit 4
 fi
 
-# One subprocess instead of two; tab-separated so IFS splits cleanly.
+# Pull both fields in one subprocess; whitespace split is what read gives us.
 read -r MANIFEST_ID CHIPS_SHA < <(
     "$PY" -c "import json,sys; m=json.load(open(sys.argv[1])); print(m['manifest_id'], m['chips_sha'])" "$MANIFEST"
 )

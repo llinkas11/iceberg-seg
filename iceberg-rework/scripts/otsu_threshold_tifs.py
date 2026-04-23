@@ -30,10 +30,6 @@ Note:
 
 import os
 import argparse
-from _method_common import (
-    write_method_config, write_skipped_chips,
-    SKIP_TOO_FEW_BANDS, SKIP_OTSU_FLOOR, SKIP_IC_BLOCK_FILTER,
-)
 import warnings
 from glob import glob
 
@@ -46,6 +42,11 @@ import pandas as pd
 from skimage.filters import threshold_otsu
 import matplotlib
 matplotlib.use("Agg")
+
+from _method_common import (
+    write_method_config, write_skipped_chips,
+    SKIP_TOO_FEW_BANDS, SKIP_OTSU_FLOOR, SKIP_IC_BLOCK_FILTER,
+)
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 

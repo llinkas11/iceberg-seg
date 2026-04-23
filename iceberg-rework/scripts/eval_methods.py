@@ -152,20 +152,6 @@ def load_test_ground_truth_from_manifest(manifest_path, pkl_dir=None):
     return gt
 
 
-def get_chip_transform(tif_path):
-    """Read transform + CRS directly from the real chip tif path."""
-    if not os.path.exists(tif_path):
-        return None, None
-    with rio.open(tif_path) as src:
-        return src.transform, src.crs
-
-
-def get_chip_shape(tif_path):
-    """Read chip shape from tif so evaluation is not hard-coded to 256x256."""
-    with rio.open(tif_path) as src:
-        return src.height, src.width
-
-
 def rasterize_gpkg(gdf, transform, height=256, width=256):
     """
     Rasterize a GeoDataFrame of iceberg polygons to a binary (H, W) uint8 mask.
