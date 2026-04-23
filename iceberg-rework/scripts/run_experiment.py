@@ -39,7 +39,6 @@ SCRIPTS_DIR = os.path.join(REPO_DIR, "scripts")
 DEFAULT_PY  = os.environ.get("PY", "/home/llinkas/.venvs/iceberg-unet312/bin/python")
 if not os.path.exists(DEFAULT_PY):
     DEFAULT_PY = sys.executable
-
 STAGE_ORDER = ["manifest", "train", "infer", "evaluate", "figures"]
 
 

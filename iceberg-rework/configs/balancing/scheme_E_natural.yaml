@@ -7,9 +7,6 @@ rules:
   drop_gt_zero: false
   resample:     false
 
-invariants:
-  val_unchanged:  true
-  test_unchanged: true
 
 notes: |
   Explicit no-op scheme. Exists as the A/B partner for any scheme that

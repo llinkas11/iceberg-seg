@@ -135,6 +135,7 @@ evaluation:
     - per_sza_bin
     - per_region
   skipped_chip_policy: count_as_false_negative   # never silent; logged in eval_summary.csv
+  focus_method: null                             # set per-experiment to pin a headline method
 
 # -----------------------------------------------------------------------------
 # Reporting

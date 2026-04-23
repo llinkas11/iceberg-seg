@@ -29,6 +29,7 @@ Requires: rasterio, geopandas, shapely, segmentation_models_pytorch, torch
 """
 
 import os
+import json
 import argparse
 import warnings
 from glob import glob
@@ -42,7 +43,9 @@ from shapely.geometry import shape
 import pandas as pd
 import segmentation_models_pytorch as smp
 
-from _method_common import write_method_config, write_skipped_chips
+from _method_common import (
+    write_method_config, write_skipped_chips, SKIP_TOO_FEW_BANDS,
+)
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -193,7 +196,7 @@ def main():
 
         if chip.shape[0] < 3:
             print(f"  [{i+1}/{len(tif_files)}] SKIP {stem}, only {chip.shape[0]} band(s)")
-            skipped.append({"chip_stem": stem, "reason": "too_few_bands",
+            skipped.append({"chip_stem": stem, "reason": SKIP_TOO_FEW_BANDS,
                             "n_bands": chip.shape[0]})
             continue
 
@@ -280,16 +283,13 @@ def main():
     else:
         print("\nNo icebergs detected across all chips.")
 
-    # Write method provenance. Pull the training_config.json sibling of the
-    # checkpoint into `extra` so the evaluator can stamp the exact model
-    # identity (manifest_id, seed, git_sha, best_val_iou) onto every UNet row.
+    # Pull the training_config.json sibling of the checkpoint into `extra` so
+    # the evaluator can stamp the exact model identity onto every UNet row.
     extra = {"checkpoint": os.path.abspath(args.checkpoint)}
-    ckpt_dir = os.path.dirname(args.checkpoint)
-    training_cfg_path = os.path.join(ckpt_dir, "training_config.json")
+    training_cfg_path = os.path.join(os.path.dirname(args.checkpoint), "training_config.json")
     if os.path.exists(training_cfg_path):
-        import json as _json
-        with open(training_cfg_path) as _f:
-            extra["training_config"] = _json.load(_f)
+        with open(training_cfg_path) as f:
+            extra["training_config"] = json.load(f)
 
     cfg_path = write_method_config(
         args.out_dir, "UNet",
@@ -303,7 +303,7 @@ def main():
         extra=extra,
     )
     skip_path = write_skipped_chips(args.out_dir, skipped)
-    n_skipped = sum(1 for r in skipped if r["reason"] == "too_few_bands")
+    n_skipped = sum(1 for r in skipped if r["reason"] == SKIP_TOO_FEW_BANDS)
 
     print(f"GeoTIFF masks       : {tif_dir}/")
     print(f"Per-chip GeoPackages: {gpkg_dir}/")

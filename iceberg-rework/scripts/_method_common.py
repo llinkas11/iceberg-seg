@@ -14,10 +14,48 @@ it processes chips and flush them in one call.
 """
 
 import csv
+import hashlib
 import json
 import os
 import subprocess
 from datetime import datetime, timezone
+
+
+# Reason strings written into skipped_chips.csv. Method scripts import these
+# rather than hand-writing the literals, so downstream filters can match on
+# constants and a typo does not split one bucket into two.
+SKIP_TOO_FEW_BANDS      = "too_few_bands"
+SKIP_TOO_FEW_PROB_BANDS = "too_few_prob_bands"
+SKIP_IC_BLOCK_FILTER    = "ic_block_filter"
+SKIP_OTSU_FLOOR         = "otsu_floor"
+SKIP_FLAT_PROB          = "flat_prob"
+SKIP_CHIP_TIF_MISSING   = "chip_tif_not_found"
+
+
+def load_manifest(path):
+    """Load a manifest.json; raise if the expected keys are missing."""
+    with open(path) as f:
+        m = json.load(f)
+    for key in ("manifest_id", "chips_sha", "chips"):
+        if key not in m:
+            raise ValueError(f"{path}: manifest missing required key '{key}'")
+    return m
+
+
+def sha256_of_text(text):
+    """Hex sha256 of a string."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def sha256_of_file(path, chunk=1 << 20):
+    """Hex sha256 of file bytes. Returns None if path is empty or missing."""
+    if not path or not os.path.exists(path):
+        return None
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(chunk), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def get_git_sha(repo_dir):

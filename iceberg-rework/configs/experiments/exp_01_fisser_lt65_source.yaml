@@ -10,7 +10,6 @@ inherits: baseline_v1
 change:
   data:
     manifest_id: fisser_lt65_original
-    source:      fisser_lt65_original
 
 notes: |
   Uses the fisser_lt65_original dataset recipe. Assumes a manifest of that

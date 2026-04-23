@@ -30,7 +30,10 @@ Note:
 
 import os
 import argparse
-from _method_common import write_method_config, write_skipped_chips
+from _method_common import (
+    write_method_config, write_skipped_chips,
+    SKIP_TOO_FEW_BANDS, SKIP_OTSU_FLOOR, SKIP_IC_BLOCK_FILTER,
+)
 import warnings
 from glob import glob
 
@@ -171,29 +174,26 @@ def apply_otsu(chips_dir, out_dir, b08_idx=2, min_area_m2=MIN_AREA_M2,
 
         if chip.shape[0] <= b08_idx:
             print(f"  [{i+1:>4}/{len(tif_files)}] SKIP {stem}: only {chip.shape[0]} bands")
-            skipped.append({"chip_stem": stem, "reason": "too_few_bands",
+            skipped.append({"chip_stem": stem, "reason": SKIP_TOO_FEW_BANDS,
                             "n_bands": chip.shape[0]})
             continue
 
         b08 = np.nan_to_num(chip[b08_idx], nan=0.0)
 
-        # Per-chip Otsu threshold
         otsu_thresh = float(threshold_otsu(b08))
 
-        # Skip flat/featureless chips
         if otsu_thresh < min_otsu_thresh:
             print(f"  [{i+1:>4}/{len(tif_files)}] FLAT {stem[:55]}  "
                   f"otsu={otsu_thresh:.4f}")
-            skipped.append({"chip_stem": stem, "reason": "otsu_floor",
+            skipped.append({"chip_stem": stem, "reason": SKIP_OTSU_FLOOR,
                             "otsu_thresh": f"{otsu_thresh:.4f}"})
             continue
 
-        # IC block filter
         ic_frac = float((b08 >= otsu_thresh).mean())
         if ic_frac > ic_threshold:
             print(f"  [{i+1:>4}/{len(tif_files)}] IC   {stem[:55]}  "
                   f"otsu={otsu_thresh:.4f}  ic_frac={ic_frac:.2f}")
-            skipped.append({"chip_stem": stem, "reason": "ic_block_filter",
+            skipped.append({"chip_stem": stem, "reason": SKIP_IC_BLOCK_FILTER,
                             "otsu_thresh": f"{otsu_thresh:.4f}",
                             "ic_frac":     f"{ic_frac:.4f}"})
             continue
@@ -244,9 +244,9 @@ def apply_otsu(chips_dir, out_dir, b08_idx=2, min_area_m2=MIN_AREA_M2,
     )
     skip_path = write_skipped_chips(out_dir, skipped)
 
-    n_skipped = sum(1 for r in skipped if r["reason"] == "too_few_bands")
-    n_flat    = sum(1 for r in skipped if r["reason"] == "otsu_floor")
-    n_ic      = sum(1 for r in skipped if r["reason"] == "ic_block_filter")
+    n_skipped = sum(1 for r in skipped if r["reason"] == SKIP_TOO_FEW_BANDS)
+    n_flat    = sum(1 for r in skipped if r["reason"] == SKIP_OTSU_FLOOR)
+    n_ic      = sum(1 for r in skipped if r["reason"] == SKIP_IC_BLOCK_FILTER)
 
     if not all_gdfs:
         print("\nNo icebergs detected across all chips.")

@@ -10,9 +10,6 @@ rules:
     gt_pos_to_gt_0:  1.0
     bin:             all
 
-invariants:
-  val_unchanged:  true
-  test_unchanged: true
 
 implementation:
   module: scripts/balance_training.py

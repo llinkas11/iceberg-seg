@@ -31,7 +31,10 @@ import geopandas as gpd
 from shapely.geometry import shape
 import pandas as pd
 
-from _method_common import write_method_config, write_skipped_chips
+from _method_common import (
+    write_method_config, write_skipped_chips,
+    SKIP_TOO_FEW_BANDS, SKIP_IC_BLOCK_FILTER,
+)
 
 warnings.filterwarnings("ignore")
 
@@ -66,7 +69,7 @@ def apply_threshold(chips_dir, out_dir, b08_idx=2, threshold=THRESHOLD, min_area
 
         if chip.shape[0] <= b08_idx:
             print(f"  [{i+1}/{len(tif_files)}] SKIP {stem}: only {chip.shape[0]} bands")
-            skipped.append({"chip_stem": stem, "reason": "too_few_bands",
+            skipped.append({"chip_stem": stem, "reason": SKIP_TOO_FEW_BANDS,
                             "n_bands": chip.shape[0]})
             continue
 
@@ -76,7 +79,7 @@ def apply_threshold(chips_dir, out_dir, b08_idx=2, threshold=THRESHOLD, min_area
         ic_frac = float((b08 >= threshold).mean())
         if ic_frac > ic_threshold:
             print(f"  [{i+1:>4}/{len(tif_files)}] IC   {stem[:60]}  ic_frac={ic_frac:.2f}")
-            skipped.append({"chip_stem": stem, "reason": "ic_block_filter",
+            skipped.append({"chip_stem": stem, "reason": SKIP_IC_BLOCK_FILTER,
                             "ic_frac": f"{ic_frac:.4f}"})
             continue
 
@@ -103,7 +106,6 @@ def apply_threshold(chips_dir, out_dir, b08_idx=2, threshold=THRESHOLD, min_area
             gdf = gpd.GeoDataFrame(records, crs=meta["crs"])
             all_gdfs.append(gdf)
 
-    # Always write method_config.json + skipped_chips.csv, even on empty runs.
     cfg_path = write_method_config(
         out_dir, "TR",
         params={
@@ -116,8 +118,8 @@ def apply_threshold(chips_dir, out_dir, b08_idx=2, threshold=THRESHOLD, min_area
     )
     skip_path = write_skipped_chips(out_dir, skipped)
 
-    n_ic      = sum(1 for r in skipped if r["reason"] == "ic_block_filter")
-    n_skipped = sum(1 for r in skipped if r["reason"] == "too_few_bands")
+    n_ic      = sum(1 for r in skipped if r["reason"] == SKIP_IC_BLOCK_FILTER)
+    n_skipped = sum(1 for r in skipped if r["reason"] == SKIP_TOO_FEW_BANDS)
 
     if not all_gdfs:
         print("\nNo icebergs detected across all chips.")

@@ -10,7 +10,6 @@ inherits: baseline_v1
 change:
   data:
     manifest_id:      fisser_lt65_plus_nulls
-    source:           fisser_lt65_plus_nulls
     balancing_scheme: scheme_B_fisser_plus_nulls
 
 notes: |

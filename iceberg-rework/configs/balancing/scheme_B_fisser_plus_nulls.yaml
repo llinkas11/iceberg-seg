@@ -14,9 +14,6 @@ rules:
     bin:             sza_lt65
   sza_bins:          [sza_lt65]
 
-invariants:
-  val_unchanged:  true
-  test_unchanged: true
 
 implementation:
   module: scripts/balance_training.py

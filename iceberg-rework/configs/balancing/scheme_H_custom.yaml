@@ -15,9 +15,6 @@ rules:
     sza_70_75: {gt_plus: 1.0, gt_zero: 1.0}
     sza_gt75:  {gt_plus: 1.0, gt_zero: 2.0}
 
-invariants:
-  val_unchanged:  true
-  test_unchanged: true
 
 notes: |
   Use scheme_H when none of schemes A through G fits and the ratios need to
