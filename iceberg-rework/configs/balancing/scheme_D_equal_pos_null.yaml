@@ -1,0 +1,23 @@
+# scheme_D_equal_pos_null: 1:1 GT+ / GT0 enforced in every SZA bin.
+
+id: scheme_D_equal_pos_null
+stage: train_only
+
+rules:
+  drop_gt_zero:      false
+  class_balance:
+    kind:            ratio
+    gt_pos_to_gt_0:  1.0
+    bin:             all
+
+invariants:
+  val_unchanged:  true
+  test_unchanged: true
+
+implementation:
+  module: scripts/balance_training.py
+  entry:  main
+
+notes: |
+  Enforce 1:1 GT+/GT0 across ALL SZA bins simultaneously. Unlike B or C this
+  is a global constraint, not a lt65-only tweak.

@@ -1,0 +1,19 @@
+# scheme_F_fixed_total_114: cap training to 114 total chips, stratified by
+# SZA bin and class.
+
+id: scheme_F_fixed_total_114
+stage: train_only
+
+rules:
+  total_cap:
+    kind:        fixed
+    count:       114
+    stratify_by: [sza_bin, has_iceberg]
+
+invariants:
+  val_unchanged:  true
+  test_unchanged: true
+
+notes: |
+  Used to match Fisser 2024's reported training-set size exactly. Stratified
+  draw so every SZA bin keeps its relative GT+/GT0 ratio.

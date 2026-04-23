@@ -1,0 +1,19 @@
+# exp_07: report OT as the headline method for this baseline.
+#
+# No training or inference variable changes. This is a reporting experiment:
+# it points at baseline_v1 outputs and says "cite OT numbers as the result
+# for this comparison row". Keeps the experiment list complete without
+# spinning up a fresh training job.
+
+id: exp_07
+inherits: baseline_v1
+
+change:
+  evaluation:
+    focus_method: OT
+
+notes: |
+  Baseline already produces OT outputs; this YAML exists so downstream
+  comparison figures can pin OT as the method for this row. run_experiment.py
+  skips train/infer for reporting-only experiments if a baseline run is
+  already cached (not yet wired; for now re-runs are safe and deterministic).

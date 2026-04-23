@@ -1,0 +1,144 @@
+# baseline_v1.yaml
+# Canonical baseline for all iceberg-segmentation experiments.
+# Every experiment inherits this file and overrides a single family of fields.
+# When anything here changes, bump the id (baseline_v2, baseline_v3, ...).
+
+id: baseline_v1
+created: 2026-04-23
+status: draft            # flip to "frozen" once v4_clean_65_15_25 is built and one baseline run is tagged.
+notes: |
+  First canonical baseline after the 2026-Q1 rework. Binary segmentation
+  (iceberg only, shadow merged in). Fisser-aligned IC masking on training
+  only. 65/15/25 split. Standard augmentations.
+
+# -----------------------------------------------------------------------------
+# Data
+# -----------------------------------------------------------------------------
+data:
+  manifest_id: v4_clean             # build this once with scripts/build_clean_dataset.py
+  source: fisser_roboflow_merged    # combined Fisser chips + Roboflow-annotated chips
+  split:
+    # The actual splitter uses: test = 57 chips per SZA bin (= 228 total), val =
+    # floor(val_frac * total_chips), train = remainder. This was set once so v4
+    # test+val chip sets remain byte-identical to v3_clean; do not regenerate
+    # without a matched retrain of every prior experiment.
+    train_frac: 0.65       # aspirational; effective value is (total - val - test) / total
+    val_frac:   0.15
+    test_frac:  0.25       # effective value is 228 / total_chips
+    stratify_by: sza_bin
+    seed: 42
+  filters:
+    shadow_merge:       true        # Fisser class 2 (shadow) -> class 1 (iceberg)
+    root_length_min_m:  40          # drop connected components smaller than this
+    ic_threshold:       0.15        # Fisser et al. (2024) IC cutoff
+    ic_mask_scope:      train_only  # val + test chips never IC-masked
+    b08_threshold_ic:   0.22        # Fisser 0.12 + 0.10 DN offset
+  balancing_scheme: none            # baseline is unbalanced; balancing is an experiment
+
+# -----------------------------------------------------------------------------
+# Preprocessing
+# -----------------------------------------------------------------------------
+preprocessing:
+  chip_size_px:       256
+  pixel_area_m2:      100.0
+  bands:              [B04, B03, B08]
+  dn_scale:           1.0e-4
+  dn_offset_applied:  false         # raw TOA is +0.10 relative to Fisser; acknowledged, not corrected
+
+# -----------------------------------------------------------------------------
+# Augmentation
+# -----------------------------------------------------------------------------
+augmentation:
+  enabled: true
+  ops:    [hflip, vflip, rot90]
+
+# -----------------------------------------------------------------------------
+# Model
+# -----------------------------------------------------------------------------
+model:
+  arch:             UnetPlusPlus
+  encoder:          resnet34
+  encoder_weights:  imagenet
+  num_classes:      1               # binary segmentation
+  in_channels:      3
+
+# -----------------------------------------------------------------------------
+# Training
+# -----------------------------------------------------------------------------
+training:
+  epochs:             100
+  batch_size:         16
+  lr:                 1.0e-4
+  weight_decay:       1.0e-4
+  optimizer:          AdamW
+  scheduler:          CosineAnnealingLR
+  scheduler_eta_min:  1.0e-6
+  loss:               dice_plus_bce  # sum of Dice and BCE-with-logits
+  seed:               42
+  workers:            4
+  ckpt_metric:        val_iou
+
+# -----------------------------------------------------------------------------
+# Inference (shared across ALL six methods)
+# -----------------------------------------------------------------------------
+inference:
+  min_area_m2:      100             # applied uniformly; not per-method any more
+  bands_expected:   3
+  probs_output:     true            # UNet saves P(iceberg) for TR/OT/CRF on probs
+
+# -----------------------------------------------------------------------------
+# Methods (one block per method; all run on the same manifest)
+# -----------------------------------------------------------------------------
+methods:
+  TR:
+    b08_threshold: 0.22
+  OT:
+    otsu_floor:    0.10
+    otsu_ceil:     0.50
+    sea_ice_frac:  0.15
+    b08_idx:       2
+  UNet:
+    threshold: 0.5
+  UNet_TR:
+    prob_threshold: 0.5
+  UNet_OT:
+    otsu_floor_prob: 0.10
+    otsu_ceil_prob:  0.90
+  UNet_CRF:
+    sxy_bilateral: 80
+    srgb:          13
+    sxy_gaussian:  3
+    compat:        10
+    iters:         5
+
+# -----------------------------------------------------------------------------
+# Evaluation
+# -----------------------------------------------------------------------------
+evaluation:
+  metrics:
+    pixel:
+      - iou
+      - dice
+      - precision
+      - recall
+      - f1
+      - mae_area
+      - mse_area
+    per_iceberg:
+      - matched_iou
+      - mae_area
+      - rerl
+      - contrast_b08
+  aggregations:
+    - all_chips
+    - gt_positive_only
+    - per_sza_bin
+    - per_region
+  skipped_chip_policy: count_as_false_negative   # never silent; logged in eval_summary.csv
+
+# -----------------------------------------------------------------------------
+# Reporting
+# -----------------------------------------------------------------------------
+reporting:
+  fig_archive: fig-archive/          # append-only, never overwritten
+  fig_index:   figures.md            # live table; new slug replaces old pointer

@@ -1,0 +1,25 @@
+# scheme_H_custom: catch-all for ad-hoc ratios specified in-line.
+#
+# The ratios block below is an example; override it per experiment by
+# defining change.data.balancing_ratios in the experiment YAML. The validator
+# accepts this scheme only when paired with a non-empty ratios override, so
+# it cannot be accidentally invoked with the example values.
+
+id: scheme_H_custom
+stage: train_only
+
+rules:
+  ratios:
+    sza_lt65:  {gt_plus: 1.0, gt_zero: 0.5}
+    sza_65_70: {gt_plus: 1.0, gt_zero: 1.0}
+    sza_70_75: {gt_plus: 1.0, gt_zero: 1.0}
+    sza_gt75:  {gt_plus: 1.0, gt_zero: 2.0}
+
+invariants:
+  val_unchanged:  true
+  test_unchanged: true
+
+notes: |
+  Use scheme_H when none of schemes A through G fits and the ratios need to
+  be hand-tuned. Every run of scheme_H should record its full ratio table in
+  the manifest so the behaviour is reproducible.

@@ -1,0 +1,13 @@
+#!/bin/bash
+#SBATCH --job-name=ice_eval_match
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:rtx3080:1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=64G
+#SBATCH --time=06:00:00
+#SBATCH --output=/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/logs/model_compare/ice_eval_match_%j.out
+#SBATCH --error=/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/logs/model_compare/ice_eval_match_%j.err
+
+set -euo pipefail
+
+bash /mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/scripts/run_matched_comparison_eval.sh

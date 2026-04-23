@@ -1,0 +1,17 @@
+# exp_03: only the lt65 chips from our own annotation pipeline.
+#
+# Replaces the baseline lt65 source with our-reconstructed lt65 chips. Other
+# SZA bins still come from the baseline manifest.
+
+id: exp_03
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id: our_lt65
+    source:      our_lt65
+
+notes: |
+  Compare against baseline_v1 to see how our-lt65 alone performs vs the
+  combined Fisser + Roboflow lt65 used in the baseline. val/test must remain
+  byte-identical to baseline_v1 for this comparison to be valid.

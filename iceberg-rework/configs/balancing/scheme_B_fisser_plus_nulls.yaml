@@ -1,0 +1,29 @@
+# scheme_B_fisser_plus_nulls: keep Fisser lt65 positives, inject GT0 chips.
+#
+# Target ratio defaults to 1:1 GT+ / GT0 within the lt65 bin. GT0 chips are
+# drawn without replacement from the input manifest's GT0 training pool.
+
+id: scheme_B_fisser_plus_nulls
+stage: train_only
+
+rules:
+  drop_gt_zero:      false
+  class_balance:
+    kind:            ratio
+    gt_pos_to_gt_0:  1.0
+    bin:             sza_lt65
+  sza_bins:          [sza_lt65]
+
+invariants:
+  val_unchanged:  true
+  test_unchanged: true
+
+implementation:
+  module: scripts/balance_training.py
+  entry:  main
+  args:
+    - --balance_positive_area_bins  # stage-2 off by default here; on for scheme_B requires override
+
+notes: |
+  Overrides balance_training defaults: GT0 chips are injected up to 1:1
+  ratio inside the lt65 training subset. Other SZA bins untouched.

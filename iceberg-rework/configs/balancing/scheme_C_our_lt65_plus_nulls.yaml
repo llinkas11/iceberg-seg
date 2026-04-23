@@ -1,0 +1,26 @@
+# scheme_C_our_lt65_plus_nulls: inject GT0 chips into our-lt65 training.
+
+id: scheme_C_our_lt65_plus_nulls
+stage: train_only
+
+rules:
+  drop_gt_zero:      false
+  class_balance:
+    kind:            ratio
+    gt_pos_to_gt_0:  1.0
+    bin:             sza_lt65
+    source_filter:   our_lt65    # only operate on our-lt65 source chips
+  sza_bins:          [sza_lt65]
+
+invariants:
+  val_unchanged:  true
+  test_unchanged: true
+
+implementation:
+  module: scripts/balance_training.py
+  entry:  main
+
+notes: |
+  Variant of scheme_B scoped to the our-lt65 chip source. Useful for
+  comparing against scheme_B (Fisser source) to isolate the effect of chip
+  origin when null injection is held constant.

@@ -1,0 +1,19 @@
+# scheme_G_equalized_across_sza: equal chip count in every SZA bin.
+
+id: scheme_G_equalized_across_sza
+stage: train_only
+
+rules:
+  per_bin_count:
+    kind: equal
+    # With 4 bins and ~551 training chips in v4_clean, target_per_bin defaults
+    # to floor(551 / 4) = 137. Override at the run site if needed.
+
+invariants:
+  val_unchanged:  true
+  test_unchanged: true
+
+notes: |
+  Forces uniform SZA representation so the model cannot exploit the lt65
+  bias in the natural distribution. Expect degraded lt65 performance vs
+  scheme_E; this is the intended trade.

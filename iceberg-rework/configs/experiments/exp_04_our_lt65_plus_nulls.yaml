@@ -1,0 +1,16 @@
+# exp_04: our-lt65 + GT0 chips injected.
+#
+# Controlled comparison to exp_03. Only difference is the balancing_scheme:
+# scheme_C (our_lt65_plus_nulls) replaces the unbalanced default.
+
+id: exp_04
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      our_lt65_plus_nulls
+    source:           our_lt65_plus_nulls
+    balancing_scheme: scheme_C_our_lt65_plus_nulls
+
+notes: |
+  Paired with exp_03 to answer "do null chips help on our lt65 data?".

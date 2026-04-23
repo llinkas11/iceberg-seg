@@ -1,0 +1,19 @@
+# exp_02: Fisser lt65 positives + GT0 chips injected at 1:1 ratio.
+#
+# Controlled comparison to exp_01: same Fisser positives, but with null chips
+# added via the scheme_B balancing strategy. Isolates the effect of training
+# on empty-water chips in addition to iceberg-bearing ones.
+
+id: exp_02
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      fisser_lt65_plus_nulls
+    source:           fisser_lt65_plus_nulls
+    balancing_scheme: scheme_B_fisser_plus_nulls
+
+notes: |
+  Compare against exp_01 to isolate the effect of null-chip injection.
+  Compare against baseline_v1 only with care: baseline also includes the
+  Roboflow-annotated chips, so the delta is not single-variable.
