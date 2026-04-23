@@ -404,8 +404,8 @@ def main():
             ic_aware = bright_non_ann / non_ann_count if non_ann_count > 0 else 0.0
 
             # Write a synthetic GeoTIFF so eval_methods.py can rasterise polygons
-            # back to masks. Without this, get_chip_transform returns None and
-            # the chip is silently dropped from the evaluation.
+            # back to masks. Without this, the cached transform in the gt record
+            # is None and the chip is silently dropped from the evaluation.
             tif_path = write_synthetic_fisser_tif(chip_stem, X[i])
 
             fisser_chips.append({

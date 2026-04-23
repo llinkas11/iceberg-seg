@@ -106,6 +106,9 @@ def apply_threshold(chips_dir, out_dir, b08_idx=2, threshold=THRESHOLD, min_area
             gdf = gpd.GeoDataFrame(records, crs=meta["crs"])
             all_gdfs.append(gdf)
 
+    # Write provenance files before the empty-run short-circuit below, so an
+    # empty result still produces method_config.json + skipped_chips.csv the
+    # evaluator can join on.
     cfg_path = write_method_config(
         out_dir, "TR",
         params={
