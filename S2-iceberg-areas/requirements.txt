@@ -1,0 +1,9 @@
+# Install PyTorch separately first (see moosehead setup below)
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+segmentation-models-pytorch
+rasterio
+geopandas
+shapely
+pandas
+matplotlib

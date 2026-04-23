@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iceberg Labeler — Admin</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div id="admin-screen">
+
+  <!-- Login gate -->
+  <div id="admin-login-form" style="display:none;max-width:400px;margin:80px auto;padding:32px">
+    <div class="login-card">
+      <h1>Admin Access</h1>
+      <p class="subtitle">Enter the admin token from config.py</p>
+      <div class="form-group">
+        <label>Admin Token</label>
+        <input id="admin-token-input" type="password" placeholder="your-admin-token"
+               onkeydown="if(event.key==='Enter') adminLogin()">
+      </div>
+      <button class="btn btn-primary btn-full" onclick="adminLogin()">Login</button>
+      <div id="admin-alert" class="alert" style="display:none;margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- Admin content (hidden until logged in) -->
+  <div id="admin-content" style="display:none">
+
+    <div class="admin-header">
+      <h1>🧊 Iceberg Labeler — Admin</h1>
+      <button class="btn btn-ghost btn-sm" onclick="loadStats();loadLabelers();loadChipBrowser()">
+        ↻ Refresh
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="adminLogout()">Logout</button>
+      <a href="/" class="btn btn-ghost btn-sm">← Labeler View</a>
+    </div>
+
+    <div class="admin-body">
+
+      <div id="admin-alert" class="alert" style="display:none"></div>
+
+      <!-- ── Stats ──────────────────────────────────────────────────────── -->
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-val" id="stat-chips">—</div>
+          <div class="stat-label">Total chips</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-labelers">—</div>
+          <div class="stat-label">Labelers</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-assigned">—</div>
+          <div class="stat-label">Assigned</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-complete" style="color:var(--c-accept)">—</div>
+          <div class="stat-label">Complete</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-pending" style="color:var(--c-shadow)">—</div>
+          <div class="stat-label">Pending</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-pct">—</div>
+          <div class="stat-label">% Complete</div>
+        </div>
+      </div>
+
+      <!-- ── Assign Chips ────────────────────────────────────────────────── -->
+      <div class="section-card">
+        <div class="section-card-header">
+          <h2>Assign Chips to Labeler</h2>
+        </div>
+        <div class="section-card-body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;align-items:end">
+            <div class="form-group" style="margin:0">
+              <label>Labeler</label>
+              <select id="assign-labeler-select" style="width:100%;padding:10px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:8px;color:var(--c-text)">
+                <option value="">— Select labeler —</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Number of chips</label>
+              <input id="assign-n-input" type="number" value="50" min="1" max="5000"
+                     style="width:100%;padding:10px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:8px;color:var(--c-text)">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Region (optional)</label>
+              <select id="assign-region-select" style="width:100%;padding:10px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:8px;color:var(--c-text)">
+                <option value="">All regions</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>SZA bin (optional)</label>
+              <select id="assign-sza-select" style="width:100%;padding:10px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:8px;color:var(--c-text)">
+                <option value="">All SZA bins</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" onclick="assignChips()">Assign</button>
+          </div>
+          <p style="margin:12px 0 0;font-size:12px;color:var(--c-subtext)">
+            Chips are assigned in priority order: unassigned first, then least-assigned.
+            A labeler will not receive the same chip twice.
+          </p>
+        </div>
+      </div>
+
+      <!-- ── Labeler Progress ────────────────────────────────────────────── -->
+      <div class="section-card">
+        <div class="section-card-header">
+          <h2>Labeler Progress</h2>
+        </div>
+        <div class="section-card-body" style="padding:0">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Group</th>
+                <th>Assigned</th>
+                <th>Complete</th>
+                <th>Pending</th>
+                <th>Skipped</th>
+                <th>Progress</th>
+                <th>Registered</th>
+              </tr>
+            </thead>
+            <tbody id="labelers-tbody">
+              <tr><td colspan="8" style="color:var(--c-subtext);text-align:center;padding:24px">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── Export ─────────────────────────────────────────────────────── -->
+      <div class="section-card">
+        <div class="section-card-header">
+          <h2>Export Annotations</h2>
+        </div>
+        <div class="section-card-body">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-primary" onclick="exportCOCO()">
+              ↓ COCO JSON (segmentation)
+            </button>
+            <button class="btn btn-ghost" onclick="exportCSV()">
+              ↓ CSV summary
+            </button>
+          </div>
+          <p style="margin:12px 0 0;font-size:12px;color:var(--c-subtext)">
+            COCO JSON contains accepted/added/modified polygons in standard
+            instance-segmentation format, ready for model training or evaluation.<br>
+            CSV gives a per-chip summary (verdict, count by action, notes).
+          </p>
+        </div>
+      </div>
+
+      <!-- ── Chip Browser ────────────────────────────────────────────────── -->
+      <div class="section-card">
+        <div class="section-card-header">
+          <h2>Chip Browser</h2>
+          <span id="chip-count" style="font-size:12px;color:var(--c-subtext)"></span>
+          <select id="browse-region-select"
+                  onchange="loadChipBrowser()"
+                  style="padding:6px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text)">
+            <option value="">All regions</option>
+          </select>
+          <select id="browse-sza-select"
+                  onchange="loadChipBrowser()"
+                  style="padding:6px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:6px;color:var(--c-text)">
+            <option value="">All SZA bins</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadChipBrowser()">↻</button>
+        </div>
+        <div class="section-card-body" style="padding:0;max-height:500px;overflow-y:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Filename</th>
+                <th>Region</th>
+                <th>SZA Bin</th>
+                <th>Predictions</th>
+                <th>Assignment Status</th>
+              </tr>
+            </thead>
+            <tbody id="chips-tbody">
+              <tr><td colspan="6" style="color:var(--c-subtext);text-align:center;padding:24px">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── Instructions ───────────────────────────────────────────────── -->
+      <div class="section-card">
+        <div class="section-card-header"><h2>Setup Instructions</h2></div>
+        <div class="section-card-body" style="font-size:13px;line-height:1.7;color:var(--c-subtext)">
+          <ol style="padding-left:20px;margin:0">
+            <li>Run <code>python scripts/import_chips.py</code> to load chips + UNet++ predictions into the database.</li>
+            <li>Share your server's IP address (e.g. <code>http://192.168.x.x:8000</code>) with labelers.</li>
+            <li>Labelers open that URL in their browser, register with their name, and save their token.</li>
+            <li>Use the "Assign Chips" panel above to distribute chips among labelers.</li>
+            <li>Monitor progress in "Labeler Progress" — refresh as needed.</li>
+            <li>When labeling is complete, export COCO JSON for downstream model training/evaluation.</li>
+          </ol>
+          <p style="margin-top:12px">
+            <strong>Backup:</strong> The entire database is a single file — <code>iceberg_labels.db</code>.
+            Copy it to OneDrive regularly as a backup.
+          </p>
+        </div>
+      </div>
+
+    </div><!-- /admin-body -->
+  </div><!-- /admin-content -->
+</div><!-- /admin-screen -->
+
+<script src="/static/js/admin.js"></script>
+</body>
+</html>

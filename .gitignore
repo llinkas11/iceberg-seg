@@ -1,0 +1,98 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Python / environments
+# ──────────────────────────────────────────────────────────────────────────────
+.venv/
+.venv_ads/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OS / editor / tool state
+# ──────────────────────────────────────────────────────────────────────────────
+.DS_Store
+.vscode/
+.idea/
+.claude/
+**/.claude/
+memory/
+**/.ipynb_checkpoints/
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Secrets (NEVER commit)
+# ──────────────────────────────────────────────────────────────────────────────
+.roboflow/
+*.env
+*.pem
+*.key
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Large data / artifacts that belong on HPC, not GitHub
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Root-level data (audio, zips, CSVs too large or irrelevant to code)
+data/
+
+# Third-party papers (copyrighted PDFs)
+papers/
+
+# Personal screenshots / reference images
+images/
+
+# S2-iceberg-areas generated / bulk assets
+S2-iceberg-areas/chips/
+S2-iceberg-areas/area_comparison/
+S2-iceberg-areas/runs/
+S2-iceberg-areas/figure/
+S2-iceberg-areas/figures/
+S2-iceberg-areas/logs/
+S2-iceberg-areas/georef_predictions/
+S2-iceberg-areas/predictions/
+S2-iceberg-areas/sentinel2_downloads/
+S2-iceberg-areas/_archive/
+S2-iceberg-areas/S2UnetPlusPlus/
+S2-iceberg-areas/roboflow_manual_upload_*/
+S2-iceberg-areas/*.onnx
+S2-iceberg-areas/*.onnx.data
+S2-iceberg-areas/*.pth
+S2-iceberg-areas/*.ckpt
+S2-iceberg-areas/*.gpkg
+S2-iceberg-areas/*.gpkg-shm
+S2-iceberg-areas/*.gpkg-wal
+
+# iceberg-labeler runtime state (DB + user-copied chips)
+iceberg-labeler/iceberg_labels.db
+iceberg-labeler/iceberg_labels.db-shm
+iceberg-labeler/iceberg_labels.db-wal
+iceberg-labeler/data/
+
+# Roboflow bulk previews and example images
+roboflow/roboflow_examples/
+roboflow/previews/
+roboflow/locator_maps/
+
+# Paper-writing bulk assets (keep markdown, drop PDFs and the overleaf binary copy)
+paper-writing/_archive/
+paper-writing/overleaf/
+paper-writing/*.pdf
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Large generic binary extensions (catch-all)
+# ──────────────────────────────────────────────────────────────────────────────
+*.tif
+*.tiff
+*.jp2
+*.SAFE/
+*.zip
+*.tar
+*.tar.gz
+*.pkl
+*.npy
+*.npz
+*.mp4
+*.mov
+*.m4a
+*.wav
+*.docx
+*.pptx

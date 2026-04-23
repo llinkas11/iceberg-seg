@@ -1,0 +1,9 @@
+sentinel2_downloads/
+runs/
+predictions/
+georef_predictions/
+chips/
+logs/
+__pycache__/
+*.pyc
+.DS_Store

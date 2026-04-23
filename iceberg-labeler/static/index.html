@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iceberg Labeler</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     LOGIN SCREEN
+══════════════════════════════════════════════════════════════════════ -->
+<div id="login-screen">
+  <div class="login-card">
+    <h1>🧊 Iceberg Labeler</h1>
+    <p class="subtitle">Sentinel-2 prediction validation tool</p>
+
+    <div class="login-tabs">
+      <button class="tab-btn active" onclick="showTab('register')">New labeler</button>
+      <button class="tab-btn"        onclick="showTab('login')">Return labeler</button>
+    </div>
+
+    <!-- Register tab -->
+    <div id="tab-register">
+      <div class="form-group">
+        <label>Your name</label>
+        <input id="reg-name" type="text" placeholder="e.g. Alex Smith">
+      </div>
+      <div class="form-group">
+        <label>Group</label>
+        <select id="reg-group" style="width:100%;padding:10px 14px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:8px;color:var(--c-text);font-size:14px">
+          <option value="">— Select your group —</option>
+          <option value="Group1">Group 1</option>
+          <option value="Group2">Group 2</option>
+          <option value="Group3">Group 3</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-full" onclick="doRegister()">Register & Start</button>
+      <div id="reg-token-box" style="display:none">
+        <p style="margin:12px 0 4px;font-size:13px;color:var(--c-subtext)">
+          ⚠️ <strong>Save your token</strong> — you'll need it to log back in:
+        </p>
+        <div class="token-box" id="reg-token-display"></div>
+        <button class="btn btn-ghost btn-sm" onclick="copyToken()">📋 Copy token</button>
+      </div>
+      <div id="reg-alert" class="alert" style="display:none"></div>
+    </div>
+
+    <!-- Login tab -->
+    <div id="tab-login" style="display:none">
+      <div class="form-group">
+        <label>Your name</label>
+        <input id="login-name" type="text" placeholder="e.g. Alex Smith">
+      </div>
+      <div class="form-group">
+        <label>Token</label>
+        <input id="login-token" type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+               onkeydown="if(event.key==='Enter') doLogin()">
+      </div>
+      <button class="btn btn-primary btn-full" onclick="doLogin()">Log In</button>
+      <div id="login-alert" class="alert" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     MAIN APP SCREEN
+══════════════════════════════════════════════════════════════════════ -->
+<div id="app-screen">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <span class="topbar-brand">🧊 Iceberg Labeler</span>
+    <span class="topbar-chip-info" id="chip-info">Loading…</span>
+    <div class="progress-wrap">
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
+      </div>
+      <span class="progress-text" id="progress-text">0/0</span>
+    </div>
+    <span class="topbar-user" id="topbar-user"></span>
+    <button class="btn btn-ghost btn-sm" onclick="doLogout()">Logout</button>
+  </div>
+
+  <div class="main-area">
+
+    <!-- Map / Image canvas -->
+    <div class="map-panel">
+      <div id="leaflet-map"></div>
+      <div id="draw-hint" style="
+        display:none;position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
+        background:rgba(22,32,50,.9);padding:8px 16px;border-radius:8px;
+        font-size:13px;color:#fff;z-index:1000;pointer-events:none">
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+
+      <!-- Quick actions -->
+      <div class="sidebar-section">
+        <h3>Quick Actions</h3>
+        <div class="action-grid">
+          <button id="btn-accepted" class="btn btn-success"
+                  title="Accept all predictions (A)"
+                  onclick="annotator.acceptAll()">✓ Accept All</button>
+          <button id="btn-rejected" class="btn btn-danger"
+                  title="Reject all predictions (X)"
+                  onclick="annotator.rejectAll()">✗ No Icebergs</button>
+          <button id="btn-edited" class="btn btn-primary"
+                  title="Submit your polygon edits"
+                  onclick="annotator.submitVerdict('edited')">↑ Submit Edit</button>
+          <button id="btn-skipped" class="btn btn-ghost"
+                  title="Skip this chip (S)"
+                  onclick="annotator.submitVerdict('skipped')">→ Skip</button>
+        </div>
+        <p class="kbd-hint">Keyboard: <kbd>A</kbd> accept · <kbd>X</kbd> reject · <kbd>S</kbd> skip</p>
+      </div>
+
+      <!-- Overlay controls -->
+      <div class="sidebar-section">
+        <h3>Overlay</h3>
+        <div class="overlay-controls">
+          <div class="toggle-row">
+            <span>Show predictions</span>
+            <label class="toggle">
+              <input type="checkbox" id="overlay-toggle" checked
+                     onchange="toggleOverlay(this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="opacity-row">
+            <span>Opacity</span>
+            <input type="range" id="opacity-slider" min="0.1" max="1" step="0.05" value="0.55"
+                   oninput="annotator.updateOverlayOpacity()">
+          </div>
+        </div>
+      </div>
+
+      <!-- Draw tools -->
+      <div class="sidebar-section">
+        <h3>Draw New Polygon</h3>
+        <div class="draw-controls">
+          <button class="btn btn-primary btn-sm" onclick="annotator.startDrawMode('iceberg')"
+                  title="Draw iceberg polygon (I)">
+            + Draw Iceberg
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="annotator.stopDrawMode()"
+                  title="Cancel drawing (Esc)">
+            ✕ Cancel
+          </button>
+        </div>
+        <p class="kbd-hint"><kbd>I</kbd> draw iceberg · <kbd>Esc</kbd> cancel</p>
+      </div>
+
+      <!-- Polygon list -->
+      <div class="sidebar-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column;padding-bottom:0">
+        <h3>Polygons</h3>
+        <div class="legend" style="margin-bottom:10px">
+          <span class="legend-item">
+            <span class="legend-swatch" style="background:#3a86ff"></span> Pred. iceberg
+          </span>
+          <span class="legend-item">
+            <span class="legend-swatch" style="background:#2dc653"></span> Accepted / New
+          </span>
+          <span class="legend-item">
+            <span class="legend-swatch" style="background:#e63946"></span> Rejected
+          </span>
+        </div>
+        <p class="kbd-hint" style="text-align:left;margin-bottom:8px">
+          ↑↓ navigate · Enter accept · Del reject
+        </p>
+        <div id="polygon-list" class="polygon-list"></div>
+      </div>
+
+      <!-- Tags -->
+      <div class="sidebar-section">
+        <h3>Chip Tags (optional)</h3>
+        <div id="tag-toggles" style="display:flex;flex-wrap:wrap;gap:6px">
+          <label class="tag-toggle"><input type="checkbox" value="sea-ice"> sea-ice</label>
+          <label class="tag-toggle"><input type="checkbox" value="ambiguous"> ambiguous</label>
+          <label class="tag-toggle"><input type="checkbox" value="cloud"> cloud</label>
+          <label class="tag-toggle"><input type="checkbox" value="land-edge"> land-edge</label>
+          <label class="tag-toggle"><input type="checkbox" value="melange"> melange</label>
+          <label class="tag-toggle"><input type="checkbox" value="dark-water"> dark-water</label>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="sidebar-section">
+        <h3>Notes (optional)</h3>
+        <textarea id="notes-field" rows="2" placeholder="e.g. edge case, uncertain boundary"></textarea>
+      </div>
+
+      <!-- Labeling Guide (collapsible) -->
+      <div class="sidebar-section">
+        <h3 style="cursor:pointer" onclick="toggleGuide()">
+          Labeling Guide ▾
+        </h3>
+        <div id="labeling-guide" style="display:none;font-size:12px;line-height:1.6;color:var(--c-subtext);max-height:240px;overflow-y:auto">
+          <p style="margin:0 0 8px"><strong style="color:var(--c-text)">Label as Iceberg:</strong>
+            The visible above-water portion of the iceberg body.</p>
+          <p style="margin:0 0 8px"><strong style="color:var(--c-text)">Do NOT label:</strong></p>
+          <ul style="margin:0 0 8px;padding-left:16px">
+            <li>Open water</li>
+            <li>Shoreline or land</li>
+            <li>Dark regions that are not icebergs</li>
+            <li>Sea ice or melange (tag the chip instead)</li>
+          </ul>
+          <p style="margin:0 0 8px"><strong style="color:var(--c-text)">Common confusions:</strong></p>
+          <ul style="margin:0 0 8px;padding-left:16px">
+            <li><em>Iceberg vs. sea ice:</em> If not a distinct iceberg, do not label.</li>
+            <li><em>Dark patches:</em> Only label if it is clearly an iceberg.</li>
+          </ul>
+          <p style="margin:0 0 4px"><strong style="color:var(--c-text)">Before submitting, check:</strong></p>
+          <ul style="margin:0;padding-left:16px">
+            <li>Labeled only iceberg bodies?</li>
+            <li>Avoided open water / dark patches?</li>
+            <li>Corrected obvious model mistakes?</li>
+            <li>Added missing iceberg regions?</li>
+            <li>Tagged ambiguous chips?</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Alert -->
+      <div style="padding:8px 16px">
+        <div id="app-alert" class="alert" style="display:none"></div>
+      </div>
+
+    </div><!-- /sidebar -->
+  </div><!-- /main-area -->
+</div><!-- /app-screen -->
+
+<script src="/static/js/annotator.js"></script>
+<script>
+// ── Authentication ─────────────────────────────────────────────────────────────
+function showTab(tab) {
+  document.getElementById('tab-register').style.display = tab === 'register' ? '' : 'none';
+  document.getElementById('tab-login').style.display    = tab === 'login'    ? '' : 'none';
+  document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+    btn.classList.toggle('active', (i === 0) === (tab === 'register'));
+  });
+}
+
+async function doRegister() {
+  const name = document.getElementById('reg-name').value.trim();
+  const group_name = document.getElementById('reg-group').value;
+  if (!name) return;
+  try {
+    const data = await fetch('/api/auth/register', {
+      method:  'POST',
+      headers: {'Content-Type':'application/json'},
+      body:    JSON.stringify({ name, group_name }),
+    }).then(async r => {
+      if (!r.ok) throw new Error((await r.json()).detail);
+      return r.json();
+    });
+    document.getElementById('reg-token-display').textContent = data.token;
+    document.getElementById('reg-token-box').style.display = 'block';
+    document.getElementById('reg-alert').style.display = 'none';
+    setTimeout(() => bootApp(data), 2500);   // give user 2.5s to copy token
+  } catch (err) {
+    const el = document.getElementById('reg-alert');
+    el.className   = 'alert alert-danger';
+    el.textContent = err.message;
+    el.style.display = 'block';
+  }
+}
+
+async function doLogin() {
+  const name  = document.getElementById('login-name').value.trim();
+  const token = document.getElementById('login-token').value.trim();
+  if (!name || !token) return;
+  try {
+    const data = await fetch('/api/auth/login', {
+      method:  'POST',
+      headers: {'Content-Type':'application/json'},
+      body:    JSON.stringify({ name, token }),
+    }).then(async r => {
+      if (!r.ok) throw new Error((await r.json()).detail);
+      return r.json();
+    });
+    bootApp(data);
+  } catch (err) {
+    const el = document.getElementById('login-alert');
+    el.className   = 'alert alert-danger';
+    el.textContent = err.message;
+    el.style.display = 'block';
+  }
+}
+
+function copyToken() {
+  navigator.clipboard.writeText(
+    document.getElementById('reg-token-display').textContent
+  ).then(() => alert('Token copied to clipboard!'));
+}
+
+function doLogout() {
+  localStorage.removeItem('labelerSession');
+  location.reload();
+}
+
+// ── App boot ───────────────────────────────────────────────────────────────────
+async function bootApp(labelerData) {
+  annotator.state.labeler = labelerData;
+  localStorage.setItem('labelerSession', JSON.stringify(labelerData));
+
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-screen').classList.add('visible');
+  document.getElementById('topbar-user').textContent = labelerData.name;
+
+  // Redirect admin to admin dashboard
+  if (labelerData.is_admin) {
+    window.location.href = '/admin';
+    return;
+  }
+
+  // Load progress
+  try {
+    const prog = await annotator.apiFetch('/api/annotations/my-progress');
+    annotator.state.progress = { complete: prog.complete, total: prog.total };
+  } catch {}
+
+  // Init map
+  annotator.initMap();
+
+  // Load first chip
+  const chip = await annotator.apiFetch('/api/chips/next');
+  if (!chip) {
+    document.getElementById('leaflet-map').innerHTML = `
+      <div class="empty-state">
+        <div class="icon">🎉</div>
+        <h2>No chips assigned yet</h2>
+        <p>Ask your session admin to assign chips to you.</p>
+      </div>`;
+    document.getElementById('chip-info').textContent = 'Waiting for assignments';
+    return;
+  }
+  annotator.loadChip(chip);
+  annotator.updateTopBar();
+}
+
+// ── Guide toggle ────────────────────────────────────────────────────────────────
+function toggleGuide() {
+  const el = document.getElementById('labeling-guide');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+// ── Collect selected tags ───────────────────────────────────────────────────────
+function getSelectedTags() {
+  return [...document.querySelectorAll('#tag-toggles input:checked')]
+    .map(cb => cb.value);
+}
+
+// Clear tags between chips
+const _origLoadChip = annotator.loadChip;
+annotator.loadChip = function(chip) {
+  document.querySelectorAll('#tag-toggles input').forEach(cb => cb.checked = false);
+  _origLoadChip.call(annotator, chip);
+};
+
+// ── Overlay toggle (wired to sidebar checkbox) ─────────────────────────────────
+function toggleOverlay(visible) {
+  annotator.state.overlayVisible = visible;
+  annotator.updateOverlayVisibility();
+}
+
+// ── Auto-login if session is cached ───────────────────────────────────────────
+const cached = localStorage.getItem('labelerSession');
+if (cached) {
+  try { bootApp(JSON.parse(cached)); } catch {}
+}
+</script>
+</body>
+</html>
