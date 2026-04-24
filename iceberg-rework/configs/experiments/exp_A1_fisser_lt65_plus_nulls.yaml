@@ -1,0 +1,27 @@
+# A1: Fisser lt65 + GT-zero chips. Same source as A0, aug still off.
+#
+# The single controlled difference from A0 is the addition of null chips to
+# training via scheme_B. Answers: does showing the model empty water stop it
+# hallucinating icebergs on null test chips?
+
+id: exp_A1_fisser_lt65_plus_nulls
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      fisser_lt65_plus_nulls
+    balancing_scheme: scheme_B_fisser_plus_nulls
+  augmentation:
+    enabled: false
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A1
+  compared_to: exp_A0_fisser_lt65_original
+
+notes: |
+  GT0 chips are pulled from our null-chip pool (scripts/build_lt65_nulls.py)
+  and grafted onto the Fisser positive set at 1:1 ratio by scheme_B. Aug
+  stays off so A1 vs A0 isolates the null-chip effect.

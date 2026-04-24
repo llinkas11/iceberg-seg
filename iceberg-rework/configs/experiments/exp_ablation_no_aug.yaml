@@ -1,0 +1,21 @@
+# Ablation, not a progression step: baseline_v1 with augmentation disabled.
+#
+# Kept outside the A/B progression because its intent is an aug ablation
+# against the full all-bins baseline, whereas A3 -> A4 does the same
+# question on the lt65-scoped chain. Useful as a reviewer-requested check.
+
+id: exp_ablation_no_aug
+inherits: baseline_v1
+
+change:
+  augmentation:
+    enabled: false
+
+progression:
+  phase: ablation
+  step: null
+  compared_to: baseline_v1
+
+notes: |
+  Identical chip set to baseline_v1, only hflip / vflip / rot90 are disabled.
+  Measures augmentation lift on the all-bins training volume.

@@ -1,0 +1,22 @@
+# B1: report per-chip Otsu on B08 as the headline method.
+#
+# Phase B runs one training job (baseline_v1 checkpoint) and evaluates six
+# methods over the same test chips. This YAML pins OT as the cited method
+# for the B1 row of the method progression.
+
+id: exp_B1_method_otsu
+inherits: baseline_v1
+
+change:
+  evaluation:
+    focus_method: OT
+
+progression:
+  phase: B
+  step: B1
+  compared_to: exp_B0_method_threshold
+
+notes: |
+  No training happens here; run_experiment.py --exp exp_B1_method_otsu
+  re-uses the baseline_v1 checkpoint + inference outputs. The change block
+  is a reporting-only flag.

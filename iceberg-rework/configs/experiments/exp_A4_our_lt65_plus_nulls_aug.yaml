@@ -1,0 +1,23 @@
+# A4: A3 + augmentations on. First step outside Fisser's recipe.
+#
+# Single controlled difference from A3 is augmentation. hflip, vflip, rot90
+# are the only augs applied (see baseline_v1.augmentation.ops).
+
+id: exp_A4_our_lt65_plus_nulls_aug
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      our_lt65_plus_nulls
+    balancing_scheme: scheme_C_our_lt65_plus_nulls
+
+progression:
+  phase: A
+  step: A4
+  compared_to: exp_A3_our_lt65_plus_nulls
+
+notes: |
+  No augmentation override in change: baseline_v1 already has aug enabled.
+  A3 -> A4 isolates the augmentation lift on a fixed chip set + balancing
+  scheme. This is the first experiment in the progression that is not
+  Fisser-equivalent.

@@ -1,0 +1,21 @@
+# B3: UNet++ + fixed threshold on P(iceberg).
+#
+# Exposes the softmax probability + a tunable threshold instead of argmax.
+# Does it recover precision/recall trade-offs that argmax hides?
+
+id: exp_B3_method_unet_threshold
+inherits: baseline_v1
+
+change:
+  evaluation:
+    focus_method: UNet_TR
+
+progression:
+  phase: B
+  step: B3
+  compared_to: exp_B2_method_unet
+
+notes: |
+  Same trained UNet checkpoint as B2 and all surrounding B rows; only the
+  post-processing rule differs. baseline_v1.methods.UNet_TR.prob_threshold
+  governs the cut.

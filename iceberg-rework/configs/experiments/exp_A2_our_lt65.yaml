@@ -1,0 +1,28 @@
+# A2: our lt65, positive-only. Swap chip source from Fisser to ours.
+#
+# Single controlled difference from A0 is the chip source; balancing
+# scheme_A (drop GT0) is kept so the positive-only structure matches A0.
+# Aug stays off.
+
+id: exp_A2_our_lt65
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      our_lt65
+    balancing_scheme: scheme_A_fisser_original
+  augmentation:
+    enabled: false
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A2
+  compared_to: exp_A0_fisser_lt65_original
+
+notes: |
+  Uses the our_lt65 manifest: iceberg-labeler-annotated lt65 chips from KQ
+  and SK, with the same 40 m root-length filter, shadow merge, and IC mask
+  rules as v4_clean. scheme_A drops any GT0 so training is positive-only,
+  matching A0's structure. A0 -> A2 isolates the data-source effect.

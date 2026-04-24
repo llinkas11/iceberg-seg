@@ -1,0 +1,22 @@
+# scheme_D_two_pos_per_null: 2:1 positive-biased balancing (GT+ : GT0 = 2:1)
+# in every SZA bin. Fixed direction: positives always dominate the mix.
+
+id: scheme_D_two_pos_per_null
+stage: train_only
+
+rules:
+  drop_gt_zero: false
+  class_balance:
+    kind:           ratio
+    gt_pos_to_gt_0: 2.0
+    direction:      fixed_positive_majority   # always resample toward 2:1 pos:null
+    bin:            all
+
+implementation:
+  module: scripts/balance_training.py
+  entry:  main
+
+notes: |
+  Used for step A5 of the paper's progression. The model sees nulls but the
+  loss stays biased toward the positive signal. Contrast with scheme_I which
+  flips direction to match the natural per-bin majority.

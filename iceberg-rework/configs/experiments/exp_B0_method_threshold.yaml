@@ -1,0 +1,20 @@
+# B0: Fisser's fixed NIR threshold (B08 >= 0.22) on all four SZA bins.
+#
+# Anchor of Phase B. Method-equivalent to running Fisser's original script
+# on our test chips; any delta in later B rows is attributable to the method.
+
+id: exp_B0_method_threshold
+inherits: baseline_v1
+
+change:
+  evaluation:
+    focus_method: TR
+
+progression:
+  phase: B
+  step: B0
+  compared_to: null
+
+notes: |
+  Reporting experiment. baseline_v1's inference stage already produces TR
+  outputs via threshold_tifs.py; this YAML pins TR as the row-B0 headline.
