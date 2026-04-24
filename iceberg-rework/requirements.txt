@@ -7,3 +7,6 @@ geopandas
 shapely
 pandas
 matplotlib
+scikit-image
+scipy
+PyYAML
