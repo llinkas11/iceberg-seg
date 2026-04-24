@@ -6,6 +6,10 @@ inherits: baseline_v1
 change:
   evaluation:
     focus_method: UNet
+  augmentation:
+    enabled: true       # UNet inference depends on training aug; pin so baseline flips do not shift B2
+
+controlled_variable: evaluation
 
 progression:
   phase: B

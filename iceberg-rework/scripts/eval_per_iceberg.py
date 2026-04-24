@@ -37,7 +37,7 @@ from glob import glob
 import numpy as np
 import pandas as pd
 import rasterio
-from scipy.ndimage import label as cc_label
+from scipy.ndimage import find_objects, label as cc_label
 from scipy.optimize import linear_sum_assignment
 
 from eval_methods import (
@@ -59,53 +59,64 @@ DEFAULT_IOU_THRESHOLD = 0.3
 def connected_components(mask):
     """
     Return list of {'mask', 'area_px', 'area_m2', 'bbox'} for the iceberg
-    class. bbox is (rmin, rmax, cmin, cmax) and lets compute_iou_matrix skip
-    disjoint-bounded component pairs without touching pixels.
+    class. bbox is a (row_slice, col_slice) pair so compute_iou_matrix can
+    restrict pixel ops to the pair's intersection region.
     """
     binary = (mask == ICEBERG_CLASS).astype(np.int32)
     labels, n = cc_label(binary)
+    if n == 0:
+        return []
+    # find_objects returns one slice tuple per label in a single C call.
+    slices = find_objects(labels)
     components = []
-    for c in range(1, n + 1):
+    for c, slc in enumerate(slices, start=1):
+        if slc is None:
+            continue
         comp = (labels == c)
         area = int(comp.sum())
         if area == 0:
             continue
-        rows = np.any(comp, axis=1)
-        cols = np.any(comp, axis=0)
-        rmin, rmax = int(rows.argmax()), int(len(rows) - rows[::-1].argmax())
-        cmin, cmax = int(cols.argmax()), int(len(cols) - cols[::-1].argmax())
         components.append({
             "mask":    comp,
             "area_px": area,
             "area_m2": area * PIXEL_AREA_M2,
-            "bbox":    (rmin, rmax, cmin, cmax),
+            "bbox":    slc,   # (row_slice, col_slice)
         })
     return components
 
 
-def _bboxes_overlap(a, b):
-    """Half-open bbox intersection test, returns False when disjoint."""
-    ar0, ar1, ac0, ac1 = a
-    br0, br1, bc0, bc1 = b
-    return not (ar1 <= br0 or br1 <= ar0 or ac1 <= bc0 or bc1 <= ac0)
+def _bbox_intersection(a, b):
+    """Return the intersecting (row_slice, col_slice) or None if disjoint."""
+    ar, ac = a
+    br, bc = b
+    r0, r1 = max(ar.start, br.start), min(ar.stop, br.stop)
+    c0, c1 = max(ac.start, bc.start), min(ac.stop, bc.stop)
+    if r1 <= r0 or c1 <= c0:
+        return None
+    return (slice(r0, r1), slice(c0, c1))
 
 
 def compute_iou_matrix(gt_comps, pred_comps):
     """
-    Pairwise IoU, shape (n_gt, n_pred). Skips pairs whose bounding boxes do
-    not overlap; for typical chips this cuts the inner loop by 5-10x.
+    Pairwise IoU, shape (n_gt, n_pred). Pairs whose bounding boxes do not
+    overlap are zero by construction; for overlapping pairs the intersection
+    and union are computed only over the bbox-intersection slice, not the
+    full chip. Cuts per-pair pixel work by 10-100x on typical chips.
     """
     n_gt, n_pred = len(gt_comps), len(pred_comps)
     iou = np.zeros((n_gt, n_pred), dtype=np.float32)
     for i, gc in enumerate(gt_comps):
-        gm, gbb = gc["mask"], gc["bbox"]
+        gm = gc["mask"]
         for j, pc in enumerate(pred_comps):
-            if not _bboxes_overlap(gbb, pc["bbox"]):
+            window = _bbox_intersection(gc["bbox"], pc["bbox"])
+            if window is None:
                 continue
-            inter = int((gm & pc["mask"]).sum())
+            gm_w = gm[window]
+            pm_w = pc["mask"][window]
+            inter = int((gm_w & pm_w).sum())
             if inter == 0:
                 continue
-            union = int((gm | pc["mask"]).sum())
+            union = gc["area_px"] + pc["area_px"] - inter
             iou[i, j] = inter / union
     return iou
 
@@ -192,6 +203,8 @@ def _pair_row(method, sza_bin, chip_stem, gi, pi, gt_comp, pred_comp, iou):
     pred_rl   = float(np.sqrt(pred_area))
     abs_area  = abs(pred_area - gt_area)
     abs_rl    = abs(pred_rl   - gt_rl)
+    # NaN when gt_area is 0; pandas to_csv writes NaN as empty by default,
+    # so downstream numeric reads of re_pct stay numeric.
     re_pct    = 100.0 * (pred_area - gt_area) / gt_area if gt_area > 0 else float("nan")
     return {
         "method":          method,
@@ -207,7 +220,7 @@ def _pair_row(method, sza_bin, chip_stem, gi, pi, gt_comp, pred_comp, iou):
         "abs_area_err_m2": round(abs_area, 2),
         "abs_rootlen_err_m": round(abs_rl, 3),
         "sq_area_err_m2":  round(abs_area ** 2, 2),
-        "re_pct":          round(re_pct, 3) if not np.isnan(re_pct) else "",
+        "re_pct":          round(re_pct, 3),
     }
 
 

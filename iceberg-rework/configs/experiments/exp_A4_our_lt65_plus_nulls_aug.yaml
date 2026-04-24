@@ -21,7 +21,7 @@ progression:
   compared_to: exp_A3_our_lt65_plus_nulls
 
 notes: |
-  No augmentation override in change: baseline_v1 already has aug enabled.
-  A3 -> A4 isolates the augmentation lift on a fixed chip set + balancing
-  scheme. This is the first experiment in the progression that is not
-  Fisser-equivalent.
+  Aug is explicitly pinned enabled: true (redundant with baseline_v1 today,
+  but insulates this experiment against future baseline edits). A3 -> A4
+  isolates the augmentation lift on a fixed chip set + balancing scheme.
+  First experiment in the progression that is not Fisser-equivalent.
