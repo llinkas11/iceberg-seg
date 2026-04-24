@@ -1,4 +1,15 @@
 #!/bin/bash
+# baseline_v1_resume.slurm: resume infer + evaluate against an existing
+# run dir whose train stage already finished.
+#
+# Submit with:
+#   sbatch slurm/baseline_v1_resume.slurm                          # uses default RUN_TS
+#   RUN_TS=20260424_185158 sbatch slurm/baseline_v1_resume.slurm   # explicit
+#
+# RUN_TS is the timestamp directory under runs/exp_baseline_v1/ that holds
+# the trained checkpoint. If unset, falls back to the original 2026-04-24
+# baseline run.
+
 #SBATCH --job-name=ice_baseline_v1_resume
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:rtx3080:1
@@ -8,33 +19,25 @@
 #SBATCH --output=/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/logs/baseline/%x_%j.out
 #SBATCH --error=/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/logs/baseline/%x_%j.err
 
-# Resume infer + evaluate for the already-trained baseline_v1 checkpoint.
-# Skips manifest + train; reuses runs/exp_baseline_v1/20260424_185158/model/.
+source "$(dirname "$0")/_common.sh"
 
-set -euo pipefail
-ROOT="/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework"
-PY="/home/llinkas/.venvs/iceberg-unet312/bin/python"
-RUN_DIR="${ROOT}/runs/exp_baseline_v1/20260424_185158"
-
-cd "${ROOT}"
-export ICEBERG_EXPERIMENT=1
-
-echo "Job ID: ${SLURM_JOB_ID}"
-echo "Node:   $(hostname)"
-echo "Resuming run: ${RUN_DIR}"
-echo ""
-
-# run_experiment.py expects an existing run dir to skip stages cleanly. Since
-# its --runs_root + auto-timestamp would create a NEW dir, run the infer +
-# evaluate scripts directly against the existing checkpoint.
-
+RUN_TS="${RUN_TS:-20260424_185158}"
+RUN_DIR="${ROOT}/runs/exp_baseline_v1/${RUN_TS}"
 CHECKPOINT="${RUN_DIR}/model/best_model.pth"
+
+if [[ ! -f "${CHECKPOINT}" ]]; then
+    echo "ERROR: checkpoint not found at ${CHECKPOINT}" >&2
+    echo "       Set RUN_TS=<timestamp_dir> and re-submit." >&2
+    exit 2
+fi
+
+echo "Resuming run: ${RUN_DIR}"
+
 MANIFEST="${ROOT}/data/v4_clean/manifest.json"
 INFER_DIR="${RUN_DIR}/inference"
 EVAL_DIR="${RUN_DIR}/evaluation"
 
-# Clear any partial inference output from the failed run so the methods do
-# not skip work they already wrote and we get a clean per-method audit.
+# Wipe partial inference output so each method gets a clean per-method audit.
 rm -rf "${INFER_DIR}"
 mkdir -p "${EVAL_DIR}"
 
@@ -43,18 +46,23 @@ bash "${ROOT}/scripts/run_methods.sh" \
     --checkpoint "${CHECKPOINT}" \
     --out_base   "${INFER_DIR}"
 
+# eval_methods + eval_per_iceberg read the same gpkgs but write to disjoint
+# dirs, so run them concurrently. Saves one Python startup + most of the
+# wall time of whichever finishes first.
 "${PY}" "${ROOT}/scripts/eval_methods.py" \
     --manifest             "${MANIFEST}" \
     --test_dir             "${INFER_DIR}" \
     --out_dir              "${EVAL_DIR}" \
-    --skipped_chip_policy  count_as_false_negative
+    --skipped_chip_policy  count_as_false_negative &
 
 "${PY}" "${ROOT}/scripts/eval_per_iceberg.py" \
     --manifest      "${MANIFEST}" \
     --test_dir      "${INFER_DIR}" \
     --out_dir       "${RUN_DIR}/per_iceberg" \
     --matcher       hungarian \
-    --iou_threshold 0.3
+    --iou_threshold 0.3 &
+
+wait
 
 echo ""
 echo "Resume complete. Outputs:"

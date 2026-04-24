@@ -56,7 +56,7 @@ def main() -> None:
     stage1 = load_iou_matrix(args.stage1_summary)
     delta = stage1 - baseline
 
-    os.makedirs(os.path.dirname(args.out_png), exist_ok=True)
+    os.makedirs(os.path.dirname(args.out_csv), exist_ok=True)
 
     rows = []
     for method in METHOD_ORDER:
