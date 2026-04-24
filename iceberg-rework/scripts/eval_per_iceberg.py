@@ -31,11 +31,8 @@ Binary segmentation: single class (iceberg, shadow merged).
 """
 
 import argparse
-import csv
-import glob as glob_mod
 import os
-import pickle
-import warnings
+from glob import glob
 
 import numpy as np
 import pandas as pd
@@ -43,11 +40,6 @@ import rasterio
 from scipy.ndimage import label as cc_label
 from scipy.optimize import linear_sum_assignment
 
-from _method_common import load_manifest
-
-# eval_methods already has the gpkg-to-mask rasterisation and per-chip lookup
-# helpers; reuse them so the two evaluators stay byte-compatible on how they
-# read method outputs.
 from eval_methods import (
     ICEBERG_CLASS,
     SZA_ORDER,
@@ -60,45 +52,61 @@ from eval_methods import (
     read_per_chip_gpkg,
 )
 
-warnings.filterwarnings("ignore", category=UserWarning)
-
 PIXEL_AREA_M2 = 100.0  # 10 m x 10 m
 DEFAULT_IOU_THRESHOLD = 0.3
 
 
-def load_pkl(path):
-    with open(path, "rb") as f:
-        return pickle.load(f)
-
-
 def connected_components(mask):
-    """Return list of {'mask', 'area_px', 'area_m2'} for the iceberg class."""
+    """
+    Return list of {'mask', 'area_px', 'area_m2', 'bbox'} for the iceberg
+    class. bbox is (rmin, rmax, cmin, cmax) and lets compute_iou_matrix skip
+    disjoint-bounded component pairs without touching pixels.
+    """
     binary = (mask == ICEBERG_CLASS).astype(np.int32)
     labels, n = cc_label(binary)
     components = []
     for c in range(1, n + 1):
         comp = (labels == c)
         area = int(comp.sum())
-        if area > 0:
-            components.append({
-                "mask":    comp,
-                "area_px": area,
-                "area_m2": area * PIXEL_AREA_M2,
-            })
+        if area == 0:
+            continue
+        rows = np.any(comp, axis=1)
+        cols = np.any(comp, axis=0)
+        rmin, rmax = int(rows.argmax()), int(len(rows) - rows[::-1].argmax())
+        cmin, cmax = int(cols.argmax()), int(len(cols) - cols[::-1].argmax())
+        components.append({
+            "mask":    comp,
+            "area_px": area,
+            "area_m2": area * PIXEL_AREA_M2,
+            "bbox":    (rmin, rmax, cmin, cmax),
+        })
     return components
 
 
+def _bboxes_overlap(a, b):
+    """Half-open bbox intersection test, returns False when disjoint."""
+    ar0, ar1, ac0, ac1 = a
+    br0, br1, bc0, bc1 = b
+    return not (ar1 <= br0 or br1 <= ar0 or ac1 <= bc0 or bc1 <= ac0)
+
+
 def compute_iou_matrix(gt_comps, pred_comps):
-    """Pairwise IoU, shape (n_gt, n_pred)."""
+    """
+    Pairwise IoU, shape (n_gt, n_pred). Skips pairs whose bounding boxes do
+    not overlap; for typical chips this cuts the inner loop by 5-10x.
+    """
     n_gt, n_pred = len(gt_comps), len(pred_comps)
     iou = np.zeros((n_gt, n_pred), dtype=np.float32)
     for i, gc in enumerate(gt_comps):
-        gm = gc["mask"]
+        gm, gbb = gc["mask"], gc["bbox"]
         for j, pc in enumerate(pred_comps):
+            if not _bboxes_overlap(gbb, pc["bbox"]):
+                continue
             inter = int((gm & pc["mask"]).sum())
+            if inter == 0:
+                continue
             union = int((gm | pc["mask"]).sum())
-            if union > 0:
-                iou[i, j] = inter / union
+            iou[i, j] = inter / union
     return iou
 
 
@@ -143,15 +151,12 @@ def greedy_match(iou_matrix, iou_threshold=0.0):
     return matches
 
 
-# ---------------------------------------------------------------------------
-# Per-method pair computation
-# ---------------------------------------------------------------------------
-
-def load_pred_mask_from_gpkg(method, sza_bin, gt_record, test_dir, merged_by_bin):
+def load_pred_mask_from_gpkg(method, gt_record, test_dir, merged_by_bin):
     """
     Resolve a method's polygons for one chip to a (H, W) uint8 mask on the
     chip's own transform. Returns None if no prediction is available.
     """
+    sza_bin   = gt_record["sza_bin"]
     chip_stem = gt_record["chip_stem"]
     tif_path  = gt_record["tif_path"]
     transform = gt_record["transform"]
@@ -171,105 +176,99 @@ def load_pred_mask_from_gpkg(method, sza_bin, gt_record, test_dir, merged_by_bin
     return rasterize_gpkg(gdf, transform, height, width)
 
 
+def _chip_row(method, sza_bin, chip_stem, n_gt, n_pred, n_matched, note=""):
+    return {
+        "method":    method, "sza_bin": sza_bin, "chip_stem": chip_stem,
+        "n_gt":      n_gt, "n_pred": n_pred, "n_matched": n_matched,
+        "n_fn":      max(0, n_gt - n_matched), "n_fp": max(0, n_pred - n_matched),
+        "note":      note,
+    }
+
+
+def _pair_row(method, sza_bin, chip_stem, gi, pi, gt_comp, pred_comp, iou):
+    gt_area   = gt_comp["area_m2"]
+    pred_area = pred_comp["area_m2"]
+    gt_rl     = float(np.sqrt(gt_area))
+    pred_rl   = float(np.sqrt(pred_area))
+    abs_area  = abs(pred_area - gt_area)
+    abs_rl    = abs(pred_rl   - gt_rl)
+    re_pct    = 100.0 * (pred_area - gt_area) / gt_area if gt_area > 0 else float("nan")
+    return {
+        "method":          method,
+        "sza_bin":         sza_bin,
+        "chip_stem":       chip_stem,
+        "gt_idx":          gi,
+        "pred_idx":        pi,
+        "gt_area_m2":      gt_area,
+        "pred_area_m2":    pred_area,
+        "gt_rl_m":         round(gt_rl,   2),
+        "pred_rl_m":       round(pred_rl, 2),
+        "iou":             round(iou, 4),
+        "abs_area_err_m2": round(abs_area, 2),
+        "abs_rootlen_err_m": round(abs_rl, 3),
+        "sq_area_err_m2":  round(abs_area ** 2, 2),
+        "re_pct":          round(re_pct, 3) if not np.isnan(re_pct) else "",
+    }
+
+
+def score_chip_pair(method, sza_bin, chip_stem, gt_comps, pred_mask,
+                    matcher, iou_threshold):
+    """
+    Compute per-pair rows + the chip-level summary row for one chip.
+
+    gt_comps is passed in pre-computed so the caller can hoist it out of any
+    per-method loop (GT does not change with method).
+    """
+    pred_comps = connected_components(pred_mask) if pred_mask is not None else []
+    n_gt, n_pred = len(gt_comps), len(pred_comps)
+
+    if n_gt == 0 and n_pred == 0:
+        return [], _chip_row(method, sza_bin, chip_stem, 0, 0, 0, note="both_null")
+    if n_gt == 0:
+        return [], _chip_row(method, sza_bin, chip_stem, 0, n_pred, 0, note="gt_null")
+    if n_pred == 0:
+        return [], _chip_row(method, sza_bin, chip_stem, n_gt, 0, 0, note="pred_null")
+
+    match_func = hungarian_match if matcher == "hungarian" else greedy_match
+    matches = match_func(compute_iou_matrix(gt_comps, pred_comps), iou_threshold)
+
+    pair_rows = [
+        _pair_row(method, sza_bin, chip_stem, gi, pi, gt_comps[gi], pred_comps[pi], iou)
+        for gi, pi, iou in matches
+    ]
+    chip_row = _chip_row(method, sza_bin, chip_stem,
+                         n_gt, n_pred, len(matches), note="")
+    return pair_rows, chip_row
+
+
 def eval_method_per_iceberg(method, gt_records, test_dir, matcher, iou_threshold):
-    """
-    Return (pair_rows, chip_rows, detection_stats) for one method.
-    """
+    """Return (pair_rows, chip_rows, detection_stats) for one method."""
     merged_by_bin = {b: load_merged_gpkg(test_dir, b, method) for b in SZA_ORDER}
 
-    pair_rows  = []
-    chip_rows  = []
-    n_gt_total = 0
-    n_pred_total = 0
-    n_matched_total = 0
-    match_func = hungarian_match if matcher == "hungarian" else greedy_match
+    pair_rows = []
+    chip_rows = []
+    n_gt_total = n_pred_total = n_matched_total = 0
 
     for rec in gt_records:
         sza_bin   = rec["sza_bin"]
         chip_stem = rec["chip_stem"]
-        gt_mask   = rec["mask"]
+        gt_comps  = rec["gt_comps"]  # hoisted from per-method path; see main()
 
-        pred_mask = load_pred_mask_from_gpkg(method, sza_bin, rec, test_dir, merged_by_bin)
-        if pred_mask is None:
-            # Chip has no usable tif transform; record as a skip and move on.
-            chip_rows.append({
-                "method":    method, "sza_bin": sza_bin, "chip_stem": chip_stem,
-                "n_gt":      0, "n_pred": 0, "n_matched": 0,
-                "n_fn":      0, "n_fp":   0, "note": "no_chip_transform",
-            })
+        pred_mask = load_pred_mask_from_gpkg(method, rec, test_dir, merged_by_bin)
+        if pred_mask is None and rec["transform"] is None:
+            chip_rows.append(_chip_row(method, sza_bin, chip_stem, 0, 0, 0,
+                                       note="no_chip_transform"))
             continue
 
-        gt_comps   = connected_components(gt_mask)
-        pred_comps = connected_components(pred_mask)
-        n_gt, n_pred = len(gt_comps), len(pred_comps)
-        n_gt_total   += n_gt
-        n_pred_total += n_pred
-
-        if n_gt == 0 and n_pred == 0:
-            chip_rows.append({
-                "method":    method, "sza_bin": sza_bin, "chip_stem": chip_stem,
-                "n_gt":      0, "n_pred": 0, "n_matched": 0,
-                "n_fn":      0, "n_fp":   0, "note": "both_null",
-            })
-            continue
-
-        if n_gt == 0:
-            chip_rows.append({
-                "method":    method, "sza_bin": sza_bin, "chip_stem": chip_stem,
-                "n_gt":      0, "n_pred": n_pred, "n_matched": 0,
-                "n_fn":      0, "n_fp":   n_pred, "note": "gt_null",
-            })
-            continue
-
-        if n_pred == 0:
-            chip_rows.append({
-                "method":    method, "sza_bin": sza_bin, "chip_stem": chip_stem,
-                "n_gt":      n_gt, "n_pred": 0, "n_matched": 0,
-                "n_fn":      n_gt, "n_fp":   0, "note": "pred_null",
-            })
-            continue
-
-        iou_mat = compute_iou_matrix(gt_comps, pred_comps)
-        matches = match_func(iou_mat, iou_threshold)
-
-        matched_gt   = {m[0] for m in matches}
-        matched_pred = {m[1] for m in matches}
-        chip_fn = n_gt - len(matched_gt)
-        chip_fp = n_pred - len(matched_pred)
-        n_matched_total += len(matches)
-
-        for gi, pi, iou in matches:
-            gt_area   = gt_comps[gi]["area_m2"]
-            pred_area = pred_comps[pi]["area_m2"]
-            gt_rl     = float(np.sqrt(gt_area))
-            pred_rl   = float(np.sqrt(pred_area))
-
-            abs_area_err_m2    = abs(pred_area - gt_area)
-            abs_rootlen_err_m  = abs(pred_rl   - gt_rl)
-            re_pct             = 100.0 * (pred_area - gt_area) / gt_area if gt_area > 0 else float("nan")
-
-            pair_rows.append({
-                "method":          method,
-                "sza_bin":         sza_bin,
-                "chip_stem":       chip_stem,
-                "gt_idx":          gi,
-                "pred_idx":        pi,
-                "gt_area_m2":      gt_area,
-                "pred_area_m2":    pred_area,
-                "gt_rl_m":         round(gt_rl,   2),
-                "pred_rl_m":       round(pred_rl, 2),
-                "iou":             round(iou, 4),
-                "abs_area_err_m2": round(abs_area_err_m2,   2),
-                "abs_rootlen_err_m": round(abs_rootlen_err_m, 3),
-                "sq_area_err_m2":  round(abs_area_err_m2 ** 2, 2),
-                "re_pct":          round(re_pct, 3) if not np.isnan(re_pct) else "",
-            })
-
-        chip_rows.append({
-            "method":    method, "sza_bin": sza_bin, "chip_stem": chip_stem,
-            "n_gt":      n_gt, "n_pred": n_pred, "n_matched": len(matches),
-            "n_fn":      chip_fn, "n_fp": chip_fp, "note": "",
-        })
+        new_pairs, chip_row = score_chip_pair(
+            method, sza_bin, chip_stem, gt_comps, pred_mask,
+            matcher, iou_threshold,
+        )
+        pair_rows.extend(new_pairs)
+        chip_rows.append(chip_row)
+        n_gt_total      += chip_row["n_gt"]
+        n_pred_total    += chip_row["n_pred"]
+        n_matched_total += chip_row["n_matched"]
 
     detection = {
         "method":       method,
@@ -281,10 +280,6 @@ def eval_method_per_iceberg(method, gt_records, test_dir, matcher, iou_threshold
     }
     return pair_rows, chip_rows, detection
 
-
-# ---------------------------------------------------------------------------
-# Summary tables
-# ---------------------------------------------------------------------------
 
 def build_pair_summary(pair_rows):
     """Mean / median per (method, sza_bin) on the per-pair metrics."""
@@ -328,10 +323,6 @@ def print_method_table(summary, metric_col, title):
             print(f"{m:<12} " + "".join(cells))
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", default=None,
@@ -363,9 +354,13 @@ def main():
     else:
         parser.error("pass either --manifest, or both --test_pkl and --test_index")
 
-    # -- Resolve methods + test_dir ------------------------------------------
+    # GT masks do not change with method; extract components once here and
+    # hand the list off to every per-method scorer. Saves 5 x 228 cc_label
+    # calls across the six-method sweep.
+    for rec in gt_records:
+        rec["gt_comps"] = connected_components(rec["mask"])
+
     if args.pred_dir:
-        # Legacy single-method path: assume geotiffs-only UNet output.
         legacy_single_method(args, gt_records)
         return
 
@@ -377,7 +372,6 @@ def main():
     if unknown:
         parser.error(f"unknown method(s): {unknown}; known: {METHODS}")
 
-    # -- Run per-method -------------------------------------------------------
     all_pair_rows = []
     all_chip_rows = []
     detection_rows = []
@@ -442,59 +436,25 @@ def legacy_single_method(args, gt_records):
     for rec in gt_records:
         chip_stem = rec["chip_stem"]
         sza_bin   = rec["sza_bin"]
-        gt_mask   = rec["mask"]
 
         pred_path = os.path.join(geotiff_dir, f"{chip_stem}_pred.tif")
         if not os.path.exists(pred_path):
-            candidates = glob_mod.glob(os.path.join(geotiff_dir, f"*{chip_stem}*_pred.tif"))
+            candidates = glob(os.path.join(geotiff_dir, f"*{chip_stem}*_pred.tif"))
             if not candidates:
-                chip_rows.append({
-                    "method": "UNet", "sza_bin": sza_bin, "chip_stem": chip_stem,
-                    "n_gt": 0, "n_pred": 0, "n_matched": 0,
-                    "n_fn": 0, "n_fp": 0, "note": "pred_not_found",
-                })
+                chip_rows.append(_chip_row("UNet", sza_bin, chip_stem, 0, 0, 0,
+                                           note="pred_not_found"))
                 continue
             pred_path = candidates[0]
 
         with rasterio.open(pred_path) as src:
             pred_mask = src.read(1)
 
-        gt_comps   = connected_components(gt_mask)
-        pred_comps = connected_components(pred_mask)
-        if not gt_comps or not pred_comps:
-            chip_rows.append({
-                "method": "UNet", "sza_bin": sza_bin, "chip_stem": chip_stem,
-                "n_gt": len(gt_comps), "n_pred": len(pred_comps),
-                "n_matched": 0, "n_fn": len(gt_comps), "n_fp": len(pred_comps),
-                "note": "one_side_empty",
-            })
-            continue
-
-        iou_mat = compute_iou_matrix(gt_comps, pred_comps)
-        match_func = hungarian_match if args.matcher == "hungarian" else greedy_match
-        matches = match_func(iou_mat, args.iou_threshold)
-
-        for gi, pi, iou in matches:
-            gt_area   = gt_comps[gi]["area_m2"]
-            pred_area = pred_comps[pi]["area_m2"]
-            gt_rl     = float(np.sqrt(gt_area))
-            pred_rl   = float(np.sqrt(pred_area))
-            pair_rows.append({
-                "method":          "UNet",
-                "sza_bin":         sza_bin,
-                "chip_stem":       chip_stem,
-                "gt_idx":          gi,
-                "pred_idx":        pi,
-                "gt_area_m2":      gt_area,
-                "pred_area_m2":    pred_area,
-                "gt_rl_m":         round(gt_rl, 2),
-                "pred_rl_m":       round(pred_rl, 2),
-                "iou":             round(iou, 4),
-                "abs_area_err_m2": round(abs(pred_area - gt_area), 2),
-                "abs_rootlen_err_m": round(abs(pred_rl - gt_rl), 3),
-                "sq_area_err_m2":  round((pred_area - gt_area) ** 2, 2),
-                "re_pct":          round(100.0 * (pred_area - gt_area) / gt_area, 3) if gt_area > 0 else "",
-            })
+        new_pairs, chip_row = score_chip_pair(
+            "UNet", sza_bin, chip_stem, rec["gt_comps"], pred_mask,
+            args.matcher, args.iou_threshold,
+        )
+        pair_rows.extend(new_pairs)
+        chip_rows.append(chip_row)
 
     os.makedirs(args.out_dir, exist_ok=True)
     pair_csv = os.path.join(args.out_dir, "eval_per_iceberg.csv")

@@ -10,6 +10,10 @@ change:
   data:
     manifest_id:      our_lt65_plus_nulls
     balancing_scheme: scheme_C_our_lt65_plus_nulls
+  augmentation:
+    enabled: true       # pinned so flipping baseline's aug default can't silently move A4
+
+controlled_variable: data
 
 progression:
   phase: A

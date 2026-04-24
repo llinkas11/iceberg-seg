@@ -13,6 +13,10 @@ change:
   data:
     manifest_id:      our_lt65_plus_nulls
     balancing_scheme: scheme_I_two_to_one_adaptive
+  augmentation:
+    enabled: true       # pinned so flipping baseline's aug default can't silently move A6
+
+controlled_variable: data
 
 progression:
   phase: A
