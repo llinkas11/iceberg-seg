@@ -1,0 +1,20 @@
+# exp_baseline_v1: a no-op experiment that runs the baseline as-is.
+#
+# Provides the entry point run_experiment.py expects without changing any
+# variable. Use this to materialize a canonical baseline run whose outputs
+# every Phase A and Phase B experiment compares against.
+
+id: exp_baseline_v1
+inherits: baseline_v1
+
+change: {}
+
+progression:
+  phase: baseline
+  step: baseline_v1
+  compared_to: null
+
+notes: |
+  Materialises baseline_v1 as a real training run. ICEBERG_EXPERIMENT=1 is
+  set by the slurm wrapper so train.py's seed guard fires. Resulting
+  checkpoint + per-method outputs become the reference for Phase B.

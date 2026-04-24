@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from _fig_registry import write as write_fig
+
 SZA_ORDER = ["sza_lt65", "sza_65_70", "sza_70_75", "sza_gt75"]
 SZA_LABELS = {
     "sza_lt65": "lt65",
@@ -71,7 +73,8 @@ def pivot_model_iou(comp: pd.DataFrame, value_col: str) -> pd.DataFrame:
     return df.pivot(index="method", columns="SZA", values=value_col).reindex(MODEL_METHODS)
 
 
-def plot_delta_heatmap(comp: pd.DataFrame, out_path: str, title: str) -> None:
+def plot_delta_heatmap(comp: pd.DataFrame, out_dir: str, slug: str,
+                       title: str, caption: str) -> None:
     pivot = pivot_model_iou(comp, "delta_stage1_minus_baseline")
     data = pivot.to_numpy(dtype=float)
 
@@ -93,7 +96,7 @@ def plot_delta_heatmap(comp: pd.DataFrame, out_path: str, title: str) -> None:
                 ax.text(j, i, f"{value:+.3f}", ha="center", va="center", fontsize=10)
 
     plt.tight_layout()
-    fig.savefig(out_path, dpi=160, bbox_inches="tight")
+    write_fig(fig, slug, caption, out_dir, dpi=160)
     plt.close(fig)
 
 
@@ -158,14 +161,24 @@ def main() -> None:
     lt65_pos.to_csv(os.path.join(args.out_root, "lt65_gt_positive_iou_comparison.csv"), index=False)
 
     plot_delta_heatmap(
-        comp_pos,
-        os.path.join(args.out_root, "iou_delta_heatmap_gt_positive_only.png"),
-        "Stage-1 minus baseline IoU, GT-positive chips",
+        comp_pos, args.out_root,
+        slug="iou_delta_heatmap_gt_positive_only",
+        title="Stage-1 minus baseline IoU, GT-positive chips",
+        caption=(
+            "Stage-1 minus baseline IoU on GT-positive test chips, by method "
+            "and SZA bin. Positive entries (red) mean stage-1 outperforms the "
+            "baseline; negative entries (blue) mean it regresses."
+        ),
     )
     plot_delta_heatmap(
-        comp_all,
-        os.path.join(args.out_root, "iou_delta_heatmap_all_chips.png"),
-        "Stage-1 minus baseline IoU, all chips",
+        comp_all, args.out_root,
+        slug="iou_delta_heatmap_all_chips",
+        title="Stage-1 minus baseline IoU, all chips",
+        caption=(
+            "Same comparison as above but over the full test set including "
+            "GT-zero chips, which dominate IoU averages because the union is "
+            "always non-empty when the model predicts anything."
+        ),
     )
 
     counts = test_set_counts(args.split_log)
