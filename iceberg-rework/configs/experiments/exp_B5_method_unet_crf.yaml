@@ -6,6 +6,10 @@ inherits: baseline_v1
 change:
   evaluation:
     focus_method: UNet_CRF
+  augmentation:
+    enabled: true       # UNet probs feed DenseCRF; pin so baseline aug flips do not shift B5
+
+controlled_variable: evaluation
 
 progression:
   phase: B
