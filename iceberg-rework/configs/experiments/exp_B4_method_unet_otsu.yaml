@@ -1,0 +1,22 @@
+# B4: UNet++ + per-chip Otsu on P(iceberg).
+#
+# Same adaptive-threshold idea as B1, but in the model's output space. Per
+# chip, Otsu picks the cut point that best separates the probability
+# histogram instead of applying a fixed global 0.5 argmax.
+
+id: exp_B4_method_unet_otsu
+inherits: baseline_v1
+
+change:
+  evaluation:
+    focus_method: UNet_OT
+
+progression:
+  phase: B
+  step: B4
+  compared_to: exp_B3_method_unet_threshold
+
+notes: |
+  Reporting-only. Uses baseline_v1.methods.UNet_OT parameters. The question
+  is whether Otsu after learning (B4) beats Otsu before learning (B1), and
+  whether either beats argmax (B2) or fixed-threshold-on-probs (B3).

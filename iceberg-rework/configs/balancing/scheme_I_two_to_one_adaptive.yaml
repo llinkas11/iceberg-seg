@@ -1,0 +1,29 @@
+# scheme_I_two_to_one_adaptive: 2:1 majority-to-minority balancing, with the
+# direction picked per SZA bin from the bin's natural class distribution.
+#
+# If GT+ is majority in a given bin, resample to GT+ : GT0 = 2:1.
+# If GT0 is majority, resample to GT0 : GT+ = 2:1.
+# Preserves the natural imbalance shape while capping its extreme at 2:1.
+
+id: scheme_I_two_to_one_adaptive
+stage: train_only
+
+rules:
+  drop_gt_zero: false
+  class_balance:
+    kind:      ratio
+    ratio:     2.0                           # 2:1 majority:minority, regardless of direction
+    direction: adaptive_majority_minority    # per-bin vote; see implementation notes
+    bin:       all
+
+implementation:
+  module: scripts/balance_training.py
+  entry:  main
+  # When the strategy class materialises: it must inspect each SZA bin's
+  # (GT+, GT0) counts in the input manifest before resampling, pick the
+  # larger as "majority", and enforce the ratio in that direction.
+
+notes: |
+  Used for step A6 of the paper's progression. Paired with A4 (no balancing)
+  and A5 (fixed positive-majority) to answer: does deferring to the data's
+  natural class-majority signal beat forcing positive-bias?

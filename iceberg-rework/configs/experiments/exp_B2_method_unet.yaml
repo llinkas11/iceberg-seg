@@ -1,0 +1,17 @@
+# B2: report UNet++ argmax as the headline method.
+
+id: exp_B2_method_unet
+inherits: baseline_v1
+
+change:
+  evaluation:
+    focus_method: UNet
+
+progression:
+  phase: B
+  step: B2
+  compared_to: exp_B1_method_otsu
+
+notes: |
+  The learned-vs-hand-engineered divide. Reviewer's question: "is the deep
+  model actually necessary, or does Otsu get you there?"

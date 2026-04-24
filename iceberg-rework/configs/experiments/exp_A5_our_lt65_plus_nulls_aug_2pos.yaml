@@ -1,0 +1,23 @@
+# A5: A4 + 2:1 positive-biased balancing.
+#
+# Single controlled difference from A4 is the balancing scheme (scheme_C
+# 1:1 -> scheme_D_two_pos_per_null 2:1 fixed pos-majority). Tests whether
+# weighting the loss toward the rarer positive signal improves iceberg
+# detection without losing the benefit of seeing nulls.
+
+id: exp_A5_our_lt65_plus_nulls_aug_2pos
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      our_lt65_plus_nulls
+    balancing_scheme: scheme_D_two_pos_per_null
+
+progression:
+  phase: A
+  step: A5
+  compared_to: exp_A4_our_lt65_plus_nulls_aug
+
+notes: |
+  Paired with A4 (no balancing override) and A6 (adaptive 2:1) to isolate
+  the effect of balancing direction under held-constant dataset and aug.

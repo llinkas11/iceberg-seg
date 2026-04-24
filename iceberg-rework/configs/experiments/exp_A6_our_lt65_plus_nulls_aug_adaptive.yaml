@@ -1,0 +1,25 @@
+# A6: A4 + adaptive 2:1 balancing (majority : minority).
+#
+# Sibling of A5, diverges at the balancing direction. scheme_I picks the
+# larger class per SZA bin and enforces a 2:1 majority:minority ratio. When
+# GT+ is majority the effect is the same as A5's fixed pos-bias; when GT0 is
+# majority, the direction flips. For lt65 in practice, whether it flips
+# depends on the actual per-bin counts in the input manifest.
+
+id: exp_A6_our_lt65_plus_nulls_aug_adaptive
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      our_lt65_plus_nulls
+    balancing_scheme: scheme_I_two_to_one_adaptive
+
+progression:
+  phase: A
+  step: A6
+  compared_to: exp_A4_our_lt65_plus_nulls_aug
+
+notes: |
+  Paired with A4 (no balancing) and A5 (fixed pos-bias). The A4-A5-A6 triple
+  is the balancing-direction experiment; the A0..A4 chain is the dataset
+  progression.

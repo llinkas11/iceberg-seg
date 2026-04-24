@@ -1,0 +1,27 @@
+# A3: our lt65 + GT-zero chips, aug still off.
+#
+# Single controlled difference from A2 is null-chip injection. Paired with
+# A0->A1 to form the 2x2 that answers "does null-chip help depend on chip
+# source?".
+
+id: exp_A3_our_lt65_plus_nulls
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      our_lt65_plus_nulls
+    balancing_scheme: scheme_C_our_lt65_plus_nulls
+  augmentation:
+    enabled: false
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A3
+  compared_to: exp_A2_our_lt65
+
+notes: |
+  scheme_C pulls from our GT0 lt65 pool (same origin as A1's nulls) and
+  injects at 1:1. The 2x2 A0/A1/A2/A3 is the core of the source x nulls
+  causal table.

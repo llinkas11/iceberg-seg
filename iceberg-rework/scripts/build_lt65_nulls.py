@@ -54,7 +54,7 @@ from cloud_filter_roboflow import (
     get_cloud_fraction,
     parse_chip_name,
 )
-from otsu_threshold_tifs import make_false_color, percentile_stretch
+from otsu_threshold_tifs import make_false_color, percentile_stretch  # noqa: F401
 
 
 # 1. Constants
@@ -201,8 +201,20 @@ def pick_nulls(candidates_df, target_kq=TARGET_KQ, target_sk=TARGET_SK, seed=SEE
 
 
 # 5. Contact sheet
+# Per-chip percentile stretch amplifies sensor noise on near-uniform open-water
+# chips and saturates snow/land. Use a fixed reflectance cap so all 29 tiles
+# share the same brightness scale.
+FIXED_STRETCH_MAX = 0.30
+
+
+def _fixed_false_color(chip, vmax=FIXED_STRETCH_MAX):
+    """Map B04/B03/B08 reflectance to [0,1] linearly with shared vmax."""
+    rgb = np.stack([chip[0], chip[1], chip[2]], axis=-1)
+    return np.clip(rgb / vmax, 0.0, 1.0)
+
+
 def write_contact_sheet(selected_df, out_png):
-    """6-wide grid of selected nulls (false color B04/B03/B08). Writes png."""
+    """6-wide grid of selected nulls (B04/B03/B08, fixed reflectance scale)."""
     n = len(selected_df)
     if n == 0:
         return
@@ -218,7 +230,7 @@ def write_contact_sheet(selected_df, out_png):
         ax = axes[i // cols, i % cols]
         with rio.open(r.tif_path) as src:
             chip = src.read([1, 2, 3]).astype(np.float32)
-        ax.imshow(make_false_color(chip, b08_idx=2))
+        ax.imshow(_fixed_false_color(chip))
         ax.set_title(f"{r.region} p95={r.b08_p95:.2f}", color="white", fontsize=8)
     os.makedirs(os.path.dirname(out_png), exist_ok=True)
     fig.tight_layout()

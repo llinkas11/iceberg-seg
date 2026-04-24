@@ -1,0 +1,34 @@
+# A0: reproduce Fisser's published lt65 setup.
+#
+# Anchor of the Phase A progression. Every subsequent A step changes exactly
+# one variable from this one. Augmentation is off here because Fisser did not
+# use hflip/vflip/rot90 in their original pipeline; including it in A0 would
+# compromise the reproduction claim.
+
+id: exp_A0_fisser_lt65_original
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      fisser_lt65_original
+    balancing_scheme: scheme_A_fisser_original
+  augmentation:
+    enabled: false
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A0
+  compared_to: null
+
+notes: |
+  Uses the fisser_lt65_original dataset recipe, which is Fisser's original
+  lt65 chips (no GT-zero injected, no our-lt65 chips merged). scheme_A drops
+  any GT0 the manifest might contain, matching Fisser's positive-only
+  training design.
+
+  The two-family change (data + augmentation) is the unavoidable cost of
+  Fisser replication. controlled_variable: data says the *intent* of A0 is
+  the dataset anchor; the aug flip is part of "what the reproduction entails"
+  rather than a separately tuned knob.
