@@ -84,7 +84,9 @@ def _update_index(out_dir, slug, fname, caption):
         return
 
     lines = open(index_path).read().splitlines()
-    # Find the slug's existing row by a backtick-wrapped match in column 1.
+    # Match column 1 with the closing backtick + trailing pipe so a slug like
+    # `iou_delta` cannot prefix-match `iou_delta_heatmap` and overwrite the
+    # wrong row.
     token = f"| `{slug}` |"
     replaced = False
     for i, line in enumerate(lines):

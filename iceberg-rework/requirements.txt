@@ -1,12 +1,20 @@
 # Install PyTorch separately first (see moosehead setup below)
 # pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
+# ML
 segmentation-models-pytorch
+pydensecrf2     # DenseCRF post-processing for the UNet_CRF method
+
+# Geospatial
 rasterio
 geopandas
 shapely
+
+# Scientific
 pandas
 matplotlib
 scikit-image
 scipy
+
+# Config
 PyYAML
