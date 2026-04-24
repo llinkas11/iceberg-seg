@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from _fig_registry import write as write_fig
+
 METHOD_ORDER = ["TR", "OT", "UNet", "UNet_TR", "UNet_OT", "UNet_CRF"]
 SZA_ORDER = ["sza_lt65", "sza_65_70", "sza_70_75", "sza_gt75"]
 SZA_LABELS = {
@@ -45,7 +47,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-summary", required=True)
     parser.add_argument("--stage1-summary", required=True)
-    parser.add_argument("--out-png", required=True)
+    parser.add_argument("--out-dir", required=True,
+                        help="Directory under which fig-archive/ + figures.md live")
     parser.add_argument("--out-csv", required=True)
     args = parser.parse_args()
 
@@ -95,10 +98,21 @@ def main() -> None:
         fontsize=14,
         fontweight="bold",
     )
-    fig.savefig(args.out_png, dpi=200, bbox_inches="tight")
+    archive_path = write_fig(
+        fig,
+        slug="figure21_iou_gt_positive_comparison",
+        caption=(
+            "IoU heatmap by method (rows) and SZA bin (columns) on "
+            "GT-positive test chips, showing baseline IoU, stage-1 IoU, and "
+            "the stage-1 minus baseline delta side by side. Stage-1 wins "
+            "where the delta panel is red; regressions are blue."
+        ),
+        out_dir=args.out_dir,
+        dpi=200,
+    )
     plt.close(fig)
 
-    print(f"Saved figure: {args.out_png}")
+    print(f"Saved figure: {archive_path}")
     print(f"Saved values: {args.out_csv}")
 
 
