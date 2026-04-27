@@ -3,7 +3,7 @@
 **Working tree (HPC):** `/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/`
 **Source code (versioned):** `https://github.com/llinkas11/iceberg-seg`
 **Source chip data (read-only):** `/mnt/research/v.gomezgilyaspik/students/smishra/rework/`
-**Last updated:** 2026-04-24
+**Last updated:** 2026-04-27
 
 This file is the project-level overview. For methodology prose, see `methods_draft.md`. For the live state of work and stage-by-stage progress, see `plan.md`. For the experimental progression narrative (Phase A and Phase B), see `model_progression.md`. For the deep audit and target architecture, see `refactor_plan.md`.
 
@@ -48,8 +48,8 @@ iceberg-rework/
 |
 |-- configs/                               configuration system (Phase 4 of refactor)
 |   |-- baselines/baseline_v1.yaml         canonical baseline; every experiment inherits
-|   |-- experiments/exp_*.yaml             14 experiments: A0-A6, B0-B5, baseline_v1, ablation_no_aug
-|   |-- balancing/scheme_*.yaml            9 schemes (A through I)
+|   |-- experiments/exp_*.yaml             19 experiments: A0-A9, B0-B5, baseline_v1, ablation_no_aug, ablation_no_nulls
+|   |-- balancing/scheme_*.yaml            12 schemes (A-L). J=oversample-only size balance; K=D+J; L=I+J
 |   |-- datasets/                          (reserved for dataset recipe YAMLs)
 |   `-- methods/                           (reserved; methods configured in baseline_v1.yaml today)
 |
@@ -85,9 +85,10 @@ iceberg-rework/
 |   `-- make_figure21_*.py                 GT-positive IoU heatmap generator
 |
 |-- slurm/                                 sbatch wrappers
-|   |-- _common.sh                         shared bash preamble (ROOT, PY, ICEBERG_EXPERIMENT)
+|   |-- _common.sh                         shared bash preamble (sourced by absolute path)
 |   |-- baseline_v1.slurm                  full pipeline from scratch
-|   `-- baseline_v1_resume.slurm           resume from an existing trained checkpoint
+|   |-- baseline_v1_resume.slurm           resume from an existing trained checkpoint
+|   `-- exp.slurm                          generic per-experiment runner, EXP_ID env var
 |
 |-- data/
 |   |-- annotations_filtered.coco.json     COCO with < 40 m RL icebergs removed
@@ -213,9 +214,11 @@ Reflectances are +0.10 high relative to Fisser's space because chip_sentinel2.py
 
 ---
 
-## Critical numbers (verified 2026-04-24)
+## Critical numbers (verified 2026-04-27)
 
 - v4_clean: 916 chips total. chips_sha = `fc4b3b16334f2916...`.
 - Splits: 551 / 137 / 228. Test cap: 57 chips per SZA bin.
-- baseline_v1 trained checkpoint: 100 epochs, val IoU 0.323, test IoU 0.314 (pixel-level), seed 42.
-- Six methods produce inference output for sza_lt65 and sza_65_70 in the current run; sza_70_75 and sza_gt75 in flight on job 56554.
+- baseline_v1 trained checkpoint at `runs/exp_baseline_v1/20260424_185158/model/best_model.pth`: 100 epochs, val IoU 0.323, test IoU 0.314 (pixel-level), seed 42.
+- Per-pair MAE on root length (m), best per bin: UNet_OT 8.0 at lt65; UNet_CRF 7.4 / 9.0 / 12.6 at 65-70 / 70-75 / >75. Threshold-only methods (TR, OT) over-detect with low precision (5-9%) and worsen with rising SZA.
+- 19 experiment YAMLs: baseline_v1 + A0-A9 + B0-B5 + ablation_no_aug + ablation_no_nulls. All validate locally and on HPC.
+- 12 balancing schemes: A-I (single axis) + J/K/L (size + composed).

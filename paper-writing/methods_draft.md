@@ -5,8 +5,9 @@ LaTeX. This file is the prose layer; the v4_clean pipeline, manifest schema,
 and progression-driven experimental design live in the code at
 `/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/`.
 
-Last updated: 2026-04-24 (v4_clean dataset, binary segmentation, six-method
-sweep, Hungarian per-pair evaluator, Fisser-comparable RE).
+Last updated: 2026-04-27 (v4_clean dataset, binary segmentation, six-method
+sweep, Hungarian per-pair evaluator, Fisser-comparable RE, oversample-only
+size balancing for the Phase A 2x3 grid).
 -->
 
 # Methods
@@ -138,15 +139,55 @@ No ground-truth iceberg area measurements independent of photointerpretation are
 
 ## 2.13 Experimental Design and Reproducibility
 
-Experiments follow a controlled progression. Phase A walks the dataset axis: A0 (Fisser lt65 reproduction) -> A6 (our lt65 + nulls + augmentations + adaptive 2:1 majority:minority balancing). Phase B walks the method axis on the Phase A winner: B0 (fixed threshold) -> B5 (UNet++ + DenseCRF). Each row of each phase changes exactly one controlled variable from the row before it; multi-family changes (for example, Fisser reproduction changing both the chip source and the augmentation flag) are explicit via a `controlled_variable:` declaration in the experiment YAML.
+Experiments follow a controlled progression. Phase A walks the dataset axis as a 2x3 grid: A0 (Fisser lt65 reproduction) anchors the chain; A4 sits at the centre (our lt65 + nulls + augmentations); A5/A6 vary class balancing direction (fixed positive majority, adaptive majority-minority); A7/A8/A9 add oversample-only size balancing on top of each class-balancing setting. Phase B walks the method axis on the Phase A winner: B0 (fixed B08 threshold) -> B5 (UNet++ + DenseCRF). Each row changes exactly one controlled variable from the row before it; multi-family changes (Fisser reproduction changing both the chip source and the augmentation flag) are explicit via a `controlled_variable:` declaration in the experiment YAML.
 
 The configuration system has four layers:
 
 1. `configs/baselines/baseline_v1.yaml`: canonical baseline. Every experiment inherits this.
-2. `configs/balancing/scheme_*.yaml`: nine declarative balancing schemes (A through I).
+2. `configs/balancing/scheme_*.yaml`: 12 declarative balancing schemes (A through L).
 3. `configs/datasets/`: dataset recipes; one per source variant.
-4. `configs/experiments/exp_*.yaml`: one file per experiment. Top-level `change:` block declares the deltas from baseline.
+4. `configs/experiments/exp_*.yaml`: one file per experiment (19 files at the time of writing). Top-level `change:` block declares the deltas from baseline.
 
-A validator (`scripts/validate_experiment.py`) refuses any experiment whose `change:` block touches more than one controlled family unless `controlled_variable:` is set explicitly. The runner (`scripts/run_experiment.py`) drives an experiment through five stages: manifest, train, infer, evaluate, figures. Each stage stamps the experiment id, manifest chips_sha, resolved config_sha, and git_sha into its outputs. A figure registry (`scripts/_fig_registry.py`) routes every `savefig` through an append-only `fig-archive/` and a live `figures.md` index.
+A validator (`scripts/validate_experiment.py`) refuses any experiment whose `change:` block touches more than one controlled family unless `controlled_variable:` is set explicitly. The runner (`scripts/run_experiment.py`) drives an experiment through five stages: manifest, train, infer, evaluate, figures. Each stage stamps the experiment id, manifest chips_sha, resolved config_sha, and git_sha into its outputs. A figure registry (`scripts/_fig_registry.py`) routes every `savefig` through an append-only `fig-archive/` and a live `figures.md` index, and exposes a `write_table` helper for tables-as-PNGs.
 
 Source code, configuration, and run logs are version-controlled at `github.com/llinkas11/iceberg-seg`. Materialised manifests, model checkpoints, and inference outputs live on the HPC working tree at `/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/` and are not in version control because of size.
+
+### 2.13.1 Class balancing
+
+Stage 1 of `balance_training.py` operates on the GT-positive vs GT-zero ratio per SZA bin. Three direction choices are encoded as separate schemes:
+
+- **scheme_E (natural)**: no resampling. The training distribution is left as-is, and is the implicit default for `baseline_v1` (`balancing_scheme: none`).
+- **scheme_D (fixed positive majority)**: resample each bin to a 2:1 GT+ : GT0 ratio in the same direction regardless of the natural distribution. The intent is to bias the loss toward the rarer positive signal.
+- **scheme_I (adaptive majority:minority)**: resample each bin to 2:1 majority : minority where "majority" is the class with the larger natural per-bin count. Lets the natural class-imbalance signal lead.
+
+A4, A5, A6 isolate the effect of these three settings on a fixed dataset (our lt65 + nulls + augmentations).
+
+### 2.13.2 Size balancing (oversample-only)
+
+Stage 2 of `balance_training.py` operates on the per-iceberg root-length bin within the GT-positive pool. Three bins: `rl_40_100`, `rl_100_300`, `rl_300_plus`. The default 2:1 Fisser-style implementation undersamples large bins down to a target ratio, which limits training data. To avoid that, the size balancer offers an oversample-only mode (added 2026-04-27): replicate the small and mid bins up to the count of the largest bin, never undersample. A `max_oversample_ratio` cap (default 4.0) bounds how aggressively a small bin can grow, so a 5-chip bin never trains 12x harder than a 60-chip bin.
+
+Oversample-only pairs deliberately with augmentation. A replicated chip is shown to the model multiple times per epoch, but each time receives a different random hflip / vflip / rot90 (8 possible variants total). The gradient sees more *distinct geometric instances* of the rare bin without seeing identical pixels twice. This is fundamentally different from in-line augmentation alone, which diversifies each chip's geometry but does nothing to rebalance the per-class gradient frequency the optimiser sees over the course of an epoch.
+
+scheme_J implements size balancing alone (no class change). schemes K and L compose stage-1 (D or I) with stage-2 (J) so the dataset progression can isolate each axis.
+
+### 2.13.3 Phase A 2x3 grid
+
+A4-A9 form a 2x3 grid:
+
+|                  | Size balance: off | Size balance: oversample (J) |
+|------------------|-------------------|------------------------------|
+| Class: none      | A4                | A7                            |
+| Class: fixed pos | A5                | A8                            |
+| Class: adaptive  | A6                | A9                            |
+
+Each row reads "same as the column-1 cell, but with size oversampling added." The grid lets the paper read off the marginal lift of each balancing axis when the other axis is held fixed. Pairs to look at are A4-A5-A6 (class on a fixed dataset), A4-A7 (size on natural class distribution), A5-A8, A6-A9 (size on top of class).
+
+### 2.13.4 Reporting metrics on the run
+
+Every experiment run produces three CSV families:
+
+- `evaluation/eval_summary.csv`: chip-level mean IoU / precision / recall / F1 / area MAE / area MSE per (method, sza_bin), plus GT-positive-only aggregations.
+- `per_iceberg/eval_per_iceberg_summary.csv`: per-pair mean IoU / area MAE / root-length MAE / RE per (method, sza_bin) using Hungarian matching.
+- `per_iceberg/eval_per_iceberg_detection.csv`: per-method `n_ref`, `n_pred`, `n_matched`, match rate, precision. Selection-bias disclosure for cross-method MAE comparison.
+
+The per-pair table is the headline for Fisser comparability. The chip-level table is the segmentation-community-standard companion. Detection stats are required context for any cross-method MAE claim.
