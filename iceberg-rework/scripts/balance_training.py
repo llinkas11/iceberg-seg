@@ -154,10 +154,44 @@ def replicate_indices(indices, target_count, rng):
 
 
 
-def rebalance_area_bins(indices_by_bin, target_ratio, min_bin_count, rng):
-    """Apply Fisser-style balancing to present positive area bins only."""
+def rebalance_area_bins(indices_by_bin, target_ratio, min_bin_count, rng,
+                        *, oversample_only=False, max_oversample_ratio=None):
+    """
+    Balance present positive area bins.
+
+    Default mode (oversample_only=False) is Fisser-style: oversample bins
+    below n_target_low, undersample bins above n_target_high.
+
+    oversample_only=True replicates every present bin up to the count of the
+    largest bin and never undersamples. No chip is dropped, so the training
+    set grows but every original training signal is preserved. Pairs with
+    on-by-default flips and rotations so each replicated chip gets a
+    different augmented view.
+
+    max_oversample_ratio caps how aggressively a small bin can grow. With
+    max_oversample_ratio=4, a bin with 5 chips never grows past 20 even if
+    the largest bin has 200 chips. This bounds the memorisation risk on
+    very rare bins.
+    """
     present = {name: idx for name, idx in indices_by_bin.items() if idx}
     counts = {name: len(idx) for name, idx in present.items()}
+
+    if oversample_only:
+        n_target = max(counts.values())
+        balanced = {}
+        actions = {}
+        for name, idx in present.items():
+            n = len(idx)
+            cap = n if max_oversample_ratio is None else int(max_oversample_ratio * n)
+            target = min(n_target, cap) if max_oversample_ratio is not None else n_target
+            if target > n:
+                balanced[name] = replicate_indices(idx, target, rng)
+                actions[name] = f"oversampled_to_{target}"
+            else:
+                balanced[name] = idx.copy()
+                actions[name] = "unchanged"
+        return balanced, actions
+
     n_min = min(counts.values())
     n_target_low = max(n_min, min_bin_count)
     n_target_high = max(int(target_ratio * n_min), int(target_ratio * n_target_low))
@@ -205,6 +239,20 @@ def main():
         type=int,
         default=3,
         help="Minimum count required in every present area bin to run stage 2",
+    )
+    parser.add_argument(
+        "--oversample_only",
+        action="store_true",
+        help="Stage-2 oversample-only mode: replicate small bins up to the "
+             "largest bin count, never undersample. Pairs with augmentation.",
+    )
+    parser.add_argument(
+        "--max_oversample_ratio",
+        type=float,
+        default=4.0,
+        help="Cap on per-bin oversampling under --oversample_only. With 4.0, "
+             "a bin with 5 chips never grows past 20 (default 4.0; ignored "
+             "when --oversample_only is off).",
     )
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -372,6 +420,9 @@ def main():
                 target_ratio=args.ratio,
                 min_bin_count=args.min_bin_count_for_area_balance,
                 rng=rng,
+                oversample_only=args.oversample_only,
+                max_oversample_ratio=(args.max_oversample_ratio
+                                      if args.oversample_only else None),
             )
             candidate_gtpos = []
             for area_bin in AREA_BINS:
