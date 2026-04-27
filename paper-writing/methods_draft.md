@@ -1,137 +1,152 @@
 <!--
-RECONCILIATION NOTE (2026-04-17)
+methods_draft.md: scaffolding for the paper's Methods section. Numeric claims
+must be reconciled against `plan.md` and `reference/*.md` before going into
+LaTeX. This file is the prose layer; the v4_clean pipeline, manifest schema,
+and progression-driven experimental design live in the code at
+`/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/`.
 
-Multiple items in this draft predate the 2026-04-16 pivot to the v3_balanced / binary
-pipeline. Before lifting prose into the new Overleaf template, override against plan.md
-and reference/*.md:
-
-- §2.4 Chip Filtering: the per-chip Otsu 15% sea-ice chip exclusion is superseded by
-  the annotation-aware IC filter (IC = fraction of *non-annotated* pixels with B08 >= 0.22;
-  15% threshold; 193 training chips had bright non-annotated pixels masked to zero; val/test
-  never masked). Full justification: reference/b08_analysis_results_discussion.md §3.1-3.6.
-
-- §2.5 Dataset composition: "984 annotated chips ... 790 training, 98 validation, 96 test,
-  24 per SZA bin in test" is stale. Current: 984 pre-filter -> 916 after 40 m RL filter ->
-  v3_balanced training 364 / val 137 / test 228 (57 per SZA bin in test). Class distribution
-  is binary: ocean 93.0% / iceberg 7.0%. Source: plan.md, iceberg-rework-README.md v3 tables.
-
-- §2.6 UNet++: "three-class output (ocean=0, iceberg=1, shadow=2)" is stale.
-  Binary segmentation (single class: iceberg); shadow merged before analysis (plan.md §PR-7).
-  "Test IoU 0.3617" is smishra's v2_aug checkpoint on 984 chips, NOT the current
-  v3_balanced training; the new checkpoint is pending plan.md Step 8.
-
-- §2.9 Hybrid pipelines / DenseCRF: tested on 4-chip sandbox; IoU dropped 0.011 to 0.013;
-  NOT applied to full dataset. Retain only as a negative-comparison point in prose.
-
-- §2.10 White top-hat: primary source is tiny_icebergs_methods_addendum.md.
-
-- §2.11 Evaluation: missing per-iceberg MAE / RERL / contrast metrics (plan.md Step 10,
-  implemented in eval_per_iceberg.py).
-
-Keep as scaffolding. Do NOT copy numeric claims or class-structure language without
-reconciling against plan.md and reference/*.md.
+Last updated: 2026-04-24 (v4_clean dataset, binary segmentation, six-method
+sweep, Hungarian per-pair evaluator, Fisser-comparable RE).
 -->
 
 # Methods
 
 ## 2.1 Study Regions and Imagery
 
-The study covers two marine-terminating glacier fjords in Greenland: Kangerlussuaq (KQ) and Sermilik (SK). Both fjords are sites of active calving from outlet glaciers of the Greenland Ice Sheet and have been previously documented as sources of significant iceberg flux (Moyer et al., 2019; Enderlin et al., 2014). Kangerlussuaq Fjord is located on the east coast at approximately 68.5°N, and Sermilik Fjord at approximately 65.7°N.
+The study covers two marine-terminating glacier fjords on the east coast of Greenland: Kangerlussuaq (KQ) and Sermilik (SK). Both fjords drain outlet glaciers of the Greenland Ice Sheet and are documented sources of significant iceberg flux (Moyer and others, 2019; Enderlin and others, 2014). Kangerlussuaq lies near 68.5 N; Sermilik near 65.7 N.
 
-Imagery is drawn from the Sentinel-2 Level-1C (L1C) archive (Drusch et al., 2012). L1C products provide top-of-atmosphere (TOA) reflectance at 10 m resolution for the visible and near-infrared bands used here: B04 (red, 665 nm), B03 (green, 560 nm), and B08 (near-infrared, 842 nm). All three bands are used as model inputs; B08 is the primary discriminant for iceberg detection.
+Imagery is drawn from the Sentinel-2 Level-1C (L1C) archive (Drusch and others, 2012). L1C products provide top-of-atmosphere reflectance at 10 m resolution. Three bands are used: B04 (red, 665 nm), B03 (green, 560 nm), and B08 (near-infrared, 842 nm). All three feed the model; B08 is the primary discriminant for iceberg detection at the SZA range of interest.
 
-Scenes are stratified by solar zenith angle (SZA) into four bins: SZA < 65° (sza_lt65), 65-70° (sza_65_70), 70-75° (sza_70_75), and > 75° (sza_gt75). These boundaries follow Fisser et al. (2024), who documented a threshold near SZA 65° above which threshold-based retrieval error increases substantially. The dataset comprises 175 scenes in total: 86 from Kangerlussuaq (25, 15, 30, and 16 scenes per bin) and 89 from Sermilik (33, 18, 10, and 28 scenes per bin). Scenes were acquired between September and November across multiple years to sample a range of illumination conditions while excluding winter darkness and summer melt-pond ambiguity.
+Scenes are stratified by solar zenith angle (SZA) into four bins: SZA < 65 (`sza_lt65`), 65-70 (`sza_65_70`), 70-75 (`sza_70_75`), and > 75 (`sza_gt75`). The boundaries follow Fisser and others (2024), who documented a threshold near SZA 65 above which threshold-based retrieval error increases substantially. Acquisitions span September through November across multiple years to sample illumination variation while excluding winter darkness and summer melt-pond ambiguity.
 
 ## 2.2 Radiometric Calibration Note
 
-All scenes used in this study were processed under ESA Sentinel-2 baseline N0500 or later. Under this baseline, ESA applies a +1000 DN offset to all band digital numbers before distribution. When converted to TOA reflectance using the standard scaling factor of 10^-4, this offset adds +0.10 to all reflectance values relative to the offset-corrected space used by Fisser et al. (2024). Our processing pipeline applies the 10^-4 scaling without subtracting this offset. Consequently, Fisser's calibrated threshold of B08 >= 0.12 corresponds to B08 >= 0.22 in our reflectance space, and all threshold values in this paper are reported in offset-uncorrected space. Because all scenes in the dataset share the same processing baseline, the +0.10 offset is uniform across all chips and does not affect relative comparisons between methods or between SZA bins.
+All scenes use ESA Sentinel-2 baseline N0500 or later. Under this baseline, ESA applies a +1000 DN offset to all band digital numbers before distribution. When converted to TOA reflectance using the standard 10$^{-4}$ scaling factor, this offset adds +0.10 to all reflectance values relative to the offset-corrected space used by Fisser and others (2024). Our processing pipeline applies the 10$^{-4}$ scaling without subtracting the offset. Consequently, Fisser's calibrated threshold of B08 >= 0.12 corresponds to B08 >= 0.22 in our reflectance space, and all threshold values in this paper are reported in offset-uncorrected space. Because every scene shares the same processing baseline, the +0.10 offset is uniform across all chips and does not affect relative comparisons between methods or SZA bins.
 
 ## 2.3 Data Acquisition and Chipping
 
-Scenes were downloaded from the Copernicus Data Space using the OData API, filtered to cloud cover below a scene-level threshold and constrained to the fjord AOI polygon for each study region. Each scene was chipped into 256x256 pixel tiles (2.56 x 2.56 km at 10 m resolution) using a sliding window with no overlap. Chips are stored as three-band GeoTIFF files (B04, B03, B08) with spatial reference metadata preserved from the source scene. A total of 23,981 chips were produced across both fjords and all SZA bins.
+Scenes were downloaded from the Copernicus Data Space using the OData API, filtered to scene-level cloud cover below 1 % and constrained to per-fjord AOI polygons. Each scene was tiled into 256 x 256 pixel chips (2.56 x 2.56 km at 10 m resolution) using a sliding window with no overlap. Chips are stored as three-band GeoTIFFs (B04 / B03 / B08) with spatial reference metadata preserved from the source scene.
 
 ## 2.4 Chip Filtering
 
-Before annotation and model training, chips were filtered on two criteria. First, chips with cloud cover exceeding 1% were excluded using the Sentinel-2 scene classification layer (MSK_CLASSI_B00.jp2), which provides a per-pixel cloud/cloud-shadow classification at 20 m resolution, resampled to the chip grid. Second, chips where more than 15% of pixels exceeded the per-chip Otsu threshold on B08 were excluded as likely sea-ice dominated. This combination of cloud and sea-ice filtering removed chips where iceberg detection would be unreliable or where bright non-target surfaces would corrupt annotations.
+Chips were filtered before annotation and training. First, scene-level QA60 cloud + cirrus fraction within chip bounds < 1 % (stricter than the 10 % default in the Roboflow pipeline). Second, an annotation-aware ice-coverage (IC) filter: IC is computed at the chip level as the fraction of non-annotated pixels with B08 >= 0.22, and chips with IC >= 15 % have their bright non-annotated pixels masked to zero (training only; validation and test are never masked). The IC threshold and the annotation-aware refinement are documented in `reference/b08_analysis_results_discussion.md` sections 3.1 through 3.6.
+
+A 40 m root-length cutoff is applied per individual iceberg. Connected components smaller than 16 pixels (1,600 m$^2$) are removed both from the COCO annotations (by area) and from the Fisser pickled masks (by connected-component size after shadow merge). The cutoff matches the Fisser (2025) dataset minimum and removes rasterisation artefacts (median 3 pixels) without losing any iceberg above one resolution element.
 
 ## 2.5 Annotation and Dataset Composition
 
-The training dataset comprises 984 annotated chips from two sources. The first source is 398 chips from Kangerlussuaq Fjord at SZA < 65° provided by Fisser et al. (2025). These chips carry three-class polygon annotations (ocean, iceberg, shadow) and represent well-illuminated conditions where iceberg boundaries are distinct. The second source is 586 chips at SZA > 65° annotated on the Roboflow platform by 33 annotators. High-SZA chips were annotated with a single class (iceberg); ocean and shadow pixels are background. Annotation used the SAM3 (Segment Anything Model) smart-select tool in Roboflow for initial boundary proposals, followed by manual correction. Iceberg boundaries were delineated at the visible ice-water boundary in the NIR band. Shadow regions were not explicitly labeled.
+The combined dataset is `v4_clean`, materialised at `data/v4_clean/manifest.json` on the working HPC. Composition before filtering was 984 chips; after the 40 m and IC filters, 916 chips survive into v4_clean.
 
-The 984-chip dataset was split into training (790 chips), validation (98 chips), and test (96 chips) sets. The test set contains exactly 24 chips per SZA bin to ensure balanced evaluation across illumination conditions. The training set class distribution reflects the strong ocean dominance of fjord scenes: 92.5% ocean pixels, 4.6% iceberg pixels, and 2.9% shadow pixels.
+Two annotation sources contribute:
+
+1. Fisser and others (2024) pickled masks: 398 chips at SZA < 65 from Kangerlussuaq Fjord, with three-class polygon annotations (ocean, iceberg, shadow). Shadow is merged into iceberg before any analysis (see Section 2.6). 330 of these chips survive the 40 m + IC filters.
+2. Roboflow-annotated chips: 586 chips at SZA > 65 across both fjords, with single-class iceberg annotations using the SAM3 smart-select tool followed by manual correction. All 586 contribute to v4_clean.
+
+Splits in v4_clean target 65 / 15 / 25 train/val/test. The effective split is 551 / 137 / 228 because the test set is capped at 57 chips per SZA bin (228 = 57 x 4) for cross-bin metric balance. Within v4_clean training, 193 chips received annotation-aware IC masking. The class distribution is binary: ocean 94.4 % / iceberg 5.6 % at the pixel level.
+
+The manifest is content-addressed: every chip row carries `chip_stem`, `tif_path`, `tif_sha`, `sza_bin`, `source`, `n_icebergs`, `has_iceberg`, `ic_aware`, `split`, and `pkl_position`. A `chips_sha` is computed over the sorted (chip_stem, tif_sha, split) tuples and stamped into every downstream output, so cross-experiment comparison can be grounded in identical chip membership.
+
+For evaluation across SZA bins, 330 Fisser pickled chips have synthetic GeoTIFFs at `data/raw_chips/fisser/<chip_stem>.tif`. These carry a 10 m identity transform and no CRS; they exist solely so the polygonisation + rasterisation evaluation pipeline (Section 2.11) can read every chip through one code path.
 
 ## 2.6 UNet++ Segmentation Model
 
-The segmentation model is UNet++ (Zhou et al., 2018) with a ResNet34 encoder pretrained on ImageNet (He et al., 2016). UNet++ extends the standard encoder-decoder architecture with nested dense skip connections that aggregate features from multiple encoder depths, improving boundary localization for objects at varying scales. The model accepts three-channel (B04, B03, B08) input chips at 256x256 pixels and produces a three-class output (ocean=0, iceberg=1, shadow=2). For area retrieval, only the iceberg channel is extracted from the argmax prediction; ocean and shadow are treated as background in all reported results.
+The segmentation model is UNet++ (Zhou and others, 2018) with a ResNet-34 encoder pretrained on ImageNet (He and others, 2016). UNet++ extends the standard encoder-decoder with nested dense skip connections that aggregate features across encoder depths, improving boundary localisation for objects at varying scales. The model accepts three-channel (B04 / B03 / B08) input chips at 256 x 256 pixels and produces a single-channel sigmoid output (binary segmentation: iceberg vs not-iceberg). Shadow is merged into iceberg before training (Fisser class 2 -> class 1) so the model never sees shadow as a separate class.
 
-The model was trained with a composite loss function combining Dice loss and cross-entropy loss with inverse-frequency class weights to compensate for ocean-class dominance. The optimizer was AdamW (learning rate 1e-4, weight decay 1e-3) with a cosine annealing learning rate schedule over 100 epochs and batch size 16. Training used a single NVIDIA RTX 3080 GPU on the Bowdoin College high-performance computing cluster. The checkpoint with highest validation IoU across all epochs was retained.
+Training uses a composite Dice + BCE loss, with the BCE positive weight set to the inverse of the iceberg-pixel fraction in the training set. Optimiser: AdamW (learning rate 10$^{-4}$, weight decay 10$^{-4}$). Schedule: cosine annealing over 100 epochs, batch size 16. The checkpoint with highest validation IoU across all epochs is retained.
 
-Data augmentation was selected from a 16-combination sweep covering horizontal flip, vertical flip, random 90° rotation, and color jitter, evaluated by test-set IoU. The winning configuration (horizontal flip + vertical flip + random 90° rotation, hereafter v2_aug) achieved a test IoU of 0.3617, compared to 0.3464 for the no-augmentation baseline. Color jitter augmentation degraded performance in all combinations tested, consistent with the near-grayscale nature of NIR imagery and the dominance of reflectance magnitude over color in iceberg discrimination.
+Augmentation is on by default in baseline_v1: random horizontal flip, random vertical flip, and random 90 degree rotation. Augmentation is the single variable that flips between the two adjacent rows of the dataset progression (see Section 2.13); aug-on and aug-off variants run on byte-identical chip sets so the lift can be isolated.
 
-## 2.7 Fixed NIR Threshold
+Training is launched via `slurm/baseline_v1.slurm` under the environment variable `ICEBERG_EXPERIMENT=1`. Under that flag the training script refuses to run without an explicit `--seed`, so every published checkpoint is reproducible. The seed (default 42) propagates to Python, NumPy, Torch CPU and CUDA, and the cuDNN deterministic flag.
 
-The fixed NIR threshold applies a scene-wide cutoff of B08 >= 0.22 to each chip, classifying pixels above the threshold as iceberg. This threshold corresponds to Fisser et al.'s (2024) calibrated value of 0.12 in offset-corrected reflectance space, adjusted for the +0.10 uniform offset in our pipeline (Section 2.2). The threshold is applied independently to each chip with no spatial context. Pixels forming connected components smaller than 100 m2 (1 pixel at 10 m resolution) are discarded. This method provides the simplest possible baseline and directly replicates the approach whose SZA-dependent limitations were characterized by Fisser et al. (2024).
+## 2.7 Fixed NIR Threshold (TR)
 
-## 2.8 Per-Chip Otsu Thresholding
+The fixed-threshold method applies a chip-wide cutoff of B08 >= 0.22 to each test chip, classifying pixels above the threshold as iceberg. This corresponds to Fisser and others (2024)'s calibrated value of 0.12 in offset-corrected reflectance space, adjusted for the +0.10 uniform offset in our pipeline (Section 2.2). The threshold is applied independently per chip with no spatial context. Connected components smaller than 100 m$^2$ are discarded.
 
-Per-chip Otsu thresholding computes an independent threshold for each chip from the B08 histogram using Otsu's method (Otsu, 1979), adapting to local illumination conditions rather than applying a fixed scene-wide cutoff. The threshold is computed on non-zero B08 pixels within the chip. Three guards are applied: chips where the Otsu threshold falls below 0.10 are skipped as radiometrically flat (likely open ocean or cloud); thresholds above 0.50 are clipped to 0.50 to prevent unstable values in sparse histograms; and chips where more than 15% of pixels exceed the computed threshold are skipped as likely sea-ice dominated. Polygons smaller than 100 m2 are discarded, consistent with the fixed threshold baseline.
+A chip-level IC block filter is also applied at evaluation: chips where the fraction of pixels with B08 >= 0.22 exceeds 15 % are skipped (likely sea-ice contamination). Skipped chips are recorded in `skipped_chips.csv` and counted in the per-method skip total reported alongside accuracy metrics; they do not silently drop out of the comparison.
 
-## 2.9 Hybrid Pipelines
+## 2.8 Per-Chip Otsu Thresholding (OT)
 
-Three additional pipelines combine UNet++ probability outputs with threshold-based post-processing. In UNet++/Threshold, the UNet++ iceberg probability map is binarized at a fixed probability cutoff to produce a refined segmentation. In UNet++/Otsu, the per-chip Otsu method is applied to the UNet++ iceberg probability map rather than to the raw B08 reflectance. These hybrid pipelines test whether applying adaptive thresholding to a learned probability surface outperforms applying it to raw reflectance.
+The Otsu method computes an independent threshold per chip from the B08 histogram (Otsu, 1979), adapting to local illumination. The threshold is computed on non-zero B08 pixels. Three guards are applied: chips with Otsu threshold < 0.10 are skipped as radiometrically flat; chips with > 15 % of pixels above the computed threshold are skipped as likely sea-ice dominated; thresholds above 0.50 (rare, sparse-histogram-driven) are clipped. Polygons smaller than 100 m$^2$ are discarded, matching the fixed-threshold baseline.
 
-DenseCRF (Krahenbuhl and Koltun, 2011) post-processing was evaluated as an additional refinement step in a four-chip sandbox using bilateral-only parameters (sxy=40, srgb=3, compat=4, iterations=5). CRF refinement reduced mean IoU by 0.011 to 0.013 relative to the UNet++ baseline (baseline mean IoU: 0.345; best CRF run: 0.332). Given this consistent degradation and the limited probability surface confidence at high SZA conditions, CRF post-processing was not applied to the full dataset and is not included in the main results comparison.
+## 2.9 UNet++ + Threshold (UNet_TR), UNet++ + Otsu (UNet_OT), UNet++ + DenseCRF (UNet_CRF)
 
-## 2.10 White Top-Hat Filtering for Small-Iceberg Recovery
+Three additional methods consume the UNet++ softmax probability map P(iceberg) instead of the raw B08 reflectance:
 
-Each segmentation method produces a binary iceberg mask that may miss icebergs smaller than the effective receptive field of the method. To recover these objects, a morphological white top-hat transform is applied as an optional post-processing step to every pipeline output. The white top-hat extracts bright features smaller than a structuring element from the residual between the original B08 image and its morphological opening. Candidate pixels are those that (a) exceed a fixed NIR threshold of 0.30 on B08, (b) form connected components of 2 to 32 pixels (200 to 3,200 m2 at 10 m resolution), and (c) do not overlap any existing segmentation mask by even one pixel. A large-bright-region guard suppresses false positives near shorelines and sea-ice edges: connected regions above B08 >= 0.22 that span at least 100 pixels are identified, buffered outward by 2 pixels, and excluded from the candidate search space. The top-hat step is applied independently to each method's output, producing a "+TH" variant for every pipeline (e.g., Threshold+TH, Otsu+TH, UNet+++TH). This allows direct comparison of each method with and without small-iceberg recovery across all SZA bins.
+- **UNet_TR** binarises P(iceberg) at a fixed cutoff (default 0.5).
+- **UNet_OT** runs per-chip Otsu on P(iceberg). The same flat-prob and IC-block guards as Section 2.8 apply.
+- **UNet_CRF** applies DenseCRF (Krahenbuhl and Koltun, 2011) post-processing to the chip's softmax probability stack, using bilateral and gaussian pairwise terms. The chip's reflectance image provides the bilateral term so DenseCRF can pull boundaries onto reflectance edges. Default parameters: `sxy_bilateral = 80, srgb = 13, sxy_gaussian = 3, compat = 10, iterations = 5`.
+
+All three methods share the same UNet++ checkpoint and the same softmax probabilities, so any difference between them is attributable to the post-processing rule alone.
+
+## 2.10 White Top-Hat Filtering for Small-Iceberg Recovery (deferred)
+
+A morphological white top-hat post-processing step was scoped for small-iceberg recovery but is not in the current six-method comparison. When implemented, the white top-hat will be applied to every method's output as a "+TH" variant. See `tiny_icebergs_methods_addendum.md` for the specification.
 
 ## 2.11 Evaluation
 
-All methods produce iceberg polygons stored as GeoPackage files with area in square meters. Comparison is performed at the SZA-bin level rather than the chip level, aggregating total detected area, polygon count, mean polygon area, and median polygon area across all chips in each region-bin combination. UNet++ serves as the reference method; the ratio of each threshold-based method's total area to UNet++ total area quantifies overestimation or underestimation as a function of SZA. Results are reported separately for Kangerlussuaq and Sermilik to assess whether retrieval behavior generalizes across fjords.
+Predictions for every method are stored as GeoPackages with one polygon per detected iceberg, carrying `area_m2`, `class_name`, and `source_file`. Evaluation rasterises these polygons back to pixel masks using the chip's own affine transform and runs two parallel pipelines.
+
+**Pixel-level metrics (`scripts/eval_methods.py`)**: per chip, computes IoU, precision, recall, F1, predicted area in m$^2$, ground-truth area in m$^2$, absolute area error, and squared area error against the iceberg-class mask. Aggregations by (method, sza_bin) report mean IoU / precision / recall / F1, area MAE (mean absolute area error in m$^2$), area MSE, chip count, and skip count. Aggregations also break out a GT-positive-only view, which excludes chips with zero ground-truth iceberg pixels.
+
+**Per-pair metrics (`scripts/eval_per_iceberg.py`)**: per chip, ground-truth and predicted masks are decomposed into connected components. Pairwise IoU between every GT and predicted component is computed, with a bounding-box prefilter that skips disjoint pairs without touching pixel data. Pairs are matched by Hungarian assignment on cost `1 - IoU` (`scipy.optimize.linear_sum_assignment`); pairs with IoU < 0.3 are dropped as unmatched. This is described in detail in Section 2.12.
+
+Both pipelines stamp the experiment id, chips_sha, manifest_id, and method_config_sha into their output CSVs, so any downstream comparison can verify the inputs were identical.
 
 ## 2.12 Per-Pair Area Error Metrics (Fisser-Comparable)
 
-Beyond the area-distribution comparison of Section 2.11, we quantify per-iceberg error against a visually delineated reference set and report error statistics comparable to Fisser and others (2024). This allows the four methods (UNet++, fixed NIR threshold, per-chip Otsu, and DenseCRF) to be placed on the same accuracy axis as the Fisser (2024) Sentinel-2 results.
+Beyond the area-distribution comparison, per-iceberg error is quantified against a visually delineated reference set and reported as error statistics comparable to Fisser and others (2024). This places the six methods (TR, OT, UNet++, UNet_TR, UNet_OT, UNet_CRF) on the same accuracy axis as Fisser's published Sentinel-2 results.
 
 ### Reference set
 
-Reference polygons are the set of labeler-validated iceberg outlines produced in `iceberg-labeler`. For every chip whose assignment status is complete, we retain polygons with `PolygonDecision.action` in {accepted, modified, added} from results with `chip_verdict` in {accepted, edited}. Chips carrying any of the tags {cloud, ambiguous, land-edge, melange} are dropped, because those tags flag invalid ground truth. The `sea-ice` and `dark-water` tags are retained and recorded, since those are physical study conditions, not labels of poor annotation. Each polygon is converted from chip-pixel coordinates back to the chip's UTM reference frame via the inverse of the chip's rasterio affine, and polygons shorter than 40 m in root length (sqrt of area) are discarded to match the S2 10 m ground sample distance and the size-filter convention of plan.md.
+Reference polygons are the iceberg masks of the test split of v4_clean. Per-chip ground-truth is the corresponding row of `y_test.pkl` (binary uint8). Connected components of the iceberg class are extracted with `scipy.ndimage.label` and decomposed into individual reference icebergs. The same 40 m root-length filter applied during dataset construction (Section 2.4) is implicit, since smaller components were already removed from `y_test.pkl`. Each component carries `area_m2`, `area_px`, and a bounding-box slice for downstream use.
+
+A second reference layer (the iceberg-labeler hand-validated polygons) is wired in as a future drop-in via `--reference labeler` once the labeler GPKG export pipeline lands. The per-pair pipeline accepts both reference sources without code change.
 
 ### Metrics
 
-Let $A_\mathrm{S2}$ be a predicted iceberg area and $A_\mathrm{ref}$ the matched reference area. For each matched pair we compute the relative error (after Fisser and others, 2024, eqn 2):
+Let $A_\mathrm{S2}$ be a predicted iceberg area and $A_\mathrm{ref}$ the matched reference area. For each matched pair:
 
-$$\mathrm{RE} = 100 \cdot \frac{A_\mathrm{S2} - A_\mathrm{ref}}{A_\mathrm{ref}} \quad (\%) \tag{2}$$
+$$\mathrm{RE} = 100 \cdot \frac{A_\mathrm{S2} - A_\mathrm{ref}}{A_\mathrm{ref}} \quad (\%)$$
 
-alongside two absolute error metrics and the segmentation Intersection over Union (IoU) already used during matching:
+following Fisser and others (2024, eqn 2). Alongside RE, we report two absolute error metrics and the per-pair IoU used in matching:
 
 $$\mathrm{AE}_\mathrm{area} = |A_\mathrm{S2} - A_\mathrm{ref}| \quad (\text{m}^2)$$
 
 $$\mathrm{AE}_\mathrm{root} = |\sqrt{A_\mathrm{S2}} - \sqrt{A_\mathrm{ref}}| \quad (\text{m})$$
 
-$$\mathrm{IoU} = \frac{|P \cap R|}{|P \cup R|}.$$
+$$\mathrm{IoU} = \frac{|P \cap R|}{|P \cup R|}$$
 
-Positive RE implies Sentinel-2 overestimation. Per-bin Mean Absolute Error (MAE) is the mean of $\mathrm{AE}_\mathrm{area}$ or $\mathrm{AE}_\mathrm{root}$; root-length MAE is preferred for cross-size comparison because it does not amplify with the square of iceberg linear scale.
+Positive RE indicates Sentinel-2 overestimation. Per-bin Mean Absolute Error (MAE) is the mean of $\mathrm{AE}_\mathrm{area}$ or $\mathrm{AE}_\mathrm{root}$ over matched pairs. Root-length MAE is preferred for cross-size comparison because it does not amplify with the square of iceberg linear scale.
 
 ### Matching
 
-Within each chip the reference and predicted polygons are paired by Hungarian assignment on the cost $1 - \mathrm{IoU}$, computed with `scipy.optimize.linear_sum_assignment`. Pairs with IoU below 0.3 are discarded as unmatched. If any reference polygon overlaps two or more predicted polygons with IoU $\geq$ 0.1, the group is flagged ambiguous and excluded from RE to avoid biasing the per-pair statistic with split or merged detections (Fisser and others, 2024, report the analogous exclusion for hand-curated pairs). Unmatched references enter detection statistics as false negatives; unmatched predictions enter as false positives. For each (method, region, SZA bin) combination we report the match rate n_matched / n_ref as a selection-bias disclosure, so that readers can judge how much of each method's polygon inventory enters the RE estimate.
+Per chip, the pairwise IoU matrix between reference and predicted components is computed, with a bounding-box overlap prefilter that skips disjoint-bbox pairs in O(1). For overlapping pairs, intersection is computed only over the bbox-intersection window, and union is derived as `area_ref + area_pred - inter` rather than a second full-chip OR. Matching is by Hungarian assignment on `1 - IoU` (`scipy.optimize.linear_sum_assignment`). Pairs with IoU < 0.3 are dropped as unmatched. Unmatched references count as false negatives; unmatched predictions count as false positives. For each (method, sza_bin) combination the match rate `n_matched / n_ref` is reported alongside the metric averages as a selection-bias disclosure: a method that matches 30 % of ground-truth icebergs is not directly comparable to one that matches 90 % without that context.
 
-### Size and SZA aggregation
+### SZA-binned reporting
 
-Per-pair metrics are stratified two ways.
-
-1. Size (Fisser and others, 2024, Fig 3a-c analog): pairs are grouped by reference root length into log$_2$ buckets [40, 80), [80, 160), [160, 320), [320, 640), [640, $\infty$) m. For each method we report n_pairs, mean and median RE, the 25th and 75th percentiles, area MAE, root-length MAE, and mean IoU per bucket.
-
-2. Solar zenith angle (Fisser and others, 2024, Fig 3d analog): per-chip SZA is taken from the `Sun_Angles_Grid` in the Sentinel-2 tile metadata (`MTD_TL.xml`), bilinearly interpolated at the chip centroid, with pysolar from the acquisition time and chip centroid latitude and longitude as fallback and cross-check. Per-degree median RE is computed over integer degree bins across the observed range (approximately 60 to 78$^\circ$), linearly interpolated to fill intermediate integer degrees within the sampled range (Fisser and others, 2024, eqn 3), then smoothed with a 5$^\circ$ centered running mean whose window collapses to 3 or 4 samples at the edges (Fisser and others, 2024, eqn 4). The interquartile range (25th and 75th percentile RE) is smoothed with the same filter and plotted as a shaded band.
+For each method, per-pair MAE on area, per-pair MAE on root length, and per-pair IoU are reported per SZA bin (`sza_lt65`, `sza_65_70`, `sza_70_75`, `sza_gt75`) so the SZA dependence of method accuracy can be read directly off one row per method. The full per-pair CSV (`eval_per_iceberg.csv`) carries every match individually, so finer stratifications (per ground-truth size bucket, per region, per chip source) can be computed downstream.
 
 ### Non-comparability of Fisser equation 5
 
-Fisser and others (2024, eqn 5) further standardize the smooth SZA-dependent error to a 56$^\circ$ reference anchored in an independent Dornier aerial survey. Our dataset carries no Dornier-equivalent calibration set, so applying equation 5 with our own visually delineated reference would be circular (the anchor and the thing standardized share the same source). We therefore report raw, interpolated, and smoothed RE, but do not compute the standardized SRE. Our accessible SZA range (approximately 60 to 78$^\circ$) is a subset of Fisser's 45 to 81$^\circ$; we perform no extrapolation outside the sampled range.
+Fisser and others (2024, eqn 5) standardise the SZA-dependent error to a 56 reference anchored in an independent Dornier aerial survey. Our dataset carries no Dornier-equivalent calibration, so applying equation 5 with our own visually delineated reference would be circular: the anchor and the thing being standardised would share the same source. We therefore report raw, interpolated, and smoothed RE per Fisser equations 3 and 4 over the observed SZA range, but do not compute the standardised SRE. We perform no extrapolation beyond the sampled range.
 
 ### Expected qualitative signal
 
-UNet++ is trained to separate iceberg from ocean only, with shadow merged before analysis (plan.md §PR-7). As SZA increases the shadow that accompanies each iceberg grows, but UNet++ continues to exclude it, so we expect UNet++ RE to trend negative with rising SZA. The B08 fixed threshold and per-chip Otsu both respond to reflectance alone and include the high-reflectance iceberg edges that bleed into shadow pixels when the shadow darkens; we expect their RE to trend positive with rising SZA. DenseCRF, when available, sharpens UNet++ boundaries and is expected to track UNet++ closely. Quantifying the sign and magnitude of this SZA-dependent split is the primary contribution of Section 2.12.
+UNet++ is trained to separate iceberg from ocean only, with shadow merged before analysis. As SZA increases the shadow that accompanies each iceberg grows, but UNet++ continues to exclude it, so we expect UNet++ RE to trend negative with rising SZA. The B08 fixed threshold and per-chip Otsu both respond to reflectance alone and include the high-reflectance iceberg edges that bleed into shadow pixels when the shadow darkens; we expect their RE to trend positive with rising SZA. DenseCRF sharpens UNet++ boundaries and is expected to track UNet++ closely. Quantifying the sign and magnitude of this SZA-dependent split is the primary contribution of this paper.
 
-No ground-truth iceberg area measurements independent of photointerpretation are available for direct accuracy validation. Using visually delineated labels as the reference inherits the interpreter's identification of the iceberg/water edge in B08, which is itself SZA-dependent at the highest angles. This limitation is shared with Fisser and others (2024, Greenland leg), who use the same class of reference. The match-rate and IQR statistics disclose the resulting uncertainty.
+No ground-truth iceberg area measurements independent of photointerpretation are available. Using visually delineated labels as the reference inherits the interpreter's identification of the iceberg-water edge in B08, which is itself SZA-dependent at the highest angles. This limitation is shared with Fisser and others (2024, Greenland leg), who use the same class of reference. The per-bin match-rate and IQR statistics disclose the resulting uncertainty.
+
+## 2.13 Experimental Design and Reproducibility
+
+Experiments follow a controlled progression. Phase A walks the dataset axis: A0 (Fisser lt65 reproduction) -> A6 (our lt65 + nulls + augmentations + adaptive 2:1 majority:minority balancing). Phase B walks the method axis on the Phase A winner: B0 (fixed threshold) -> B5 (UNet++ + DenseCRF). Each row of each phase changes exactly one controlled variable from the row before it; multi-family changes (for example, Fisser reproduction changing both the chip source and the augmentation flag) are explicit via a `controlled_variable:` declaration in the experiment YAML.
+
+The configuration system has four layers:
+
+1. `configs/baselines/baseline_v1.yaml`: canonical baseline. Every experiment inherits this.
+2. `configs/balancing/scheme_*.yaml`: nine declarative balancing schemes (A through I).
+3. `configs/datasets/`: dataset recipes; one per source variant.
+4. `configs/experiments/exp_*.yaml`: one file per experiment. Top-level `change:` block declares the deltas from baseline.
+
+A validator (`scripts/validate_experiment.py`) refuses any experiment whose `change:` block touches more than one controlled family unless `controlled_variable:` is set explicitly. The runner (`scripts/run_experiment.py`) drives an experiment through five stages: manifest, train, infer, evaluate, figures. Each stage stamps the experiment id, manifest chips_sha, resolved config_sha, and git_sha into its outputs. A figure registry (`scripts/_fig_registry.py`) routes every `savefig` through an append-only `fig-archive/` and a live `figures.md` index.
+
+Source code, configuration, and run logs are version-controlled at `github.com/llinkas11/iceberg-seg`. Materialised manifests, model checkpoints, and inference outputs live on the HPC working tree at `/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/` and are not in version control because of size.

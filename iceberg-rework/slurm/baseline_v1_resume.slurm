@@ -19,7 +19,9 @@
 #SBATCH --output=/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/logs/baseline/%x_%j.out
 #SBATCH --error=/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/logs/baseline/%x_%j.err
 
-source "$(dirname "$0")/_common.sh"
+# Slurm copies this script to /var/spool/slurmd/<job>/, so $(dirname "$0")
+# would not find _common.sh. Source by absolute path instead.
+source /mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/slurm/_common.sh
 
 RUN_TS="${RUN_TS:-20260424_185158}"
 RUN_DIR="${ROOT}/runs/exp_baseline_v1/${RUN_TS}"

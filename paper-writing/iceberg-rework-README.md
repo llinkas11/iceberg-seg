@@ -1,182 +1,221 @@
-# Sentinel-2 Iceberg Segmentation — Rework (llinkas)
+# Sentinel-2 Iceberg Segmentation: project README
 
-**Working directory:** `/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/`
-**Source data:** `/mnt/research/v.gomezgilyaspik/students/smishra/rework/` (read-only)
-**Last updated:** 2026-04-16
+**Working tree (HPC):** `/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/`
+**Source code (versioned):** `https://github.com/llinkas11/iceberg-seg`
+**Source chip data (read-only):** `/mnt/research/v.gomezgilyaspik/students/smishra/rework/`
+**Last updated:** 2026-04-24
 
----
-
-## Project Overview
-
-Rework of smishra's Sentinel-2 iceberg segmentation pipeline. Compares UNet++ against classical threshold methods across four solar zenith angle (SZA) bins in Kangerlussuaq (KQ) and Sermilik (SK) fjords, East Greenland.
-
-**Key methodological changes from smishra's v2 pipeline:**
-- Shadow (class 2) merged into iceberg (class 1). Model is binary (single class: iceberg).
-- 40 m root-length cutoff applied per individual iceberg (connected component >= 16 pixels).
-- IC filtering uses annotation-aware chip-level method with fixed B08 >= 0.22 threshold (Fisser's 0.12 + DN offset). Sea ice masked in training chips with IC >= 15%. Validation/test never masked.
-- Dataset resplit to 60/15/25 train/val/test with SZA-stratified test set.
-- Training set balanced to 2:1 ratio per iceberg size bin.
-- Fisser chips filtered for IC >= 15% (68 removed by provenance audit, further masking via annotation-aware IC).
-
-**Sensor:** Sentinel-2 L1C, bands B04/B03/B08, 10 m resolution
-**Chip size:** 256 x 256 pixels = 2.56 x 2.56 km
-**SZA bins:** sza_lt65 (Jul-Sep), sza_65_70 (Sep-Oct), sza_70_75 (Oct), sza_gt75 (Nov)
+This file is the project-level overview. For methodology prose, see `methods_draft.md`. For the live state of work and stage-by-stage progress, see `plan.md`. For the experimental progression narrative (Phase A and Phase B), see `model_progression.md`. For the deep audit and target architecture, see `refactor_plan.md`.
 
 ---
 
-## Folder Layout
+## What this project is
+
+Sentinel-2 L1C iceberg segmentation across four solar zenith angle (SZA) bins in Kangerlussuaq (KQ) and Sermilik (SK) fjords on the east coast of Greenland. The paper compares six retrieval methods on a single shared dataset:
+
+- **TR**: fixed B08 NIR threshold (Fisser-equivalent, 0.22 in offset-uncorrected space)
+- **OT**: per-chip Otsu thresholding on B08
+- **UNet**: UNet++ (ResNet-34, ImageNet-init) binary segmentation
+- **UNet_TR**: fixed threshold on the UNet++ softmax probability
+- **UNet_OT**: per-chip Otsu on the UNet++ softmax probability
+- **UNet_CRF**: UNet++ followed by DenseCRF post-processing
+
+Every method runs on the same test chip set, the same trained checkpoint (where applicable), and the same minimum-area filter, so cross-method differences attribute to the method.
+
+The paper's headline metric is **mean absolute error (MAE) on iceberg area**, per matched pair, per SZA bin. This is the only number that plugs directly into Fisser and others (2024)'s reported tables. Per-pair IoU is the segmentation-community-standard companion. Match rate is reported alongside both as a selection-bias disclosure.
+
+---
+
+## Sensor and grid
+
+- Sentinel-2 L1C, bands B04 (red), B03 (green), B08 (NIR), 10 m resolution.
+- Chip size: 256 x 256 pixels (2.56 x 2.56 km).
+- SZA bins: `sza_lt65` (Jul-Sep), `sza_65_70` (Sep-Oct), `sza_70_75` (Oct), `sza_gt75` (Nov).
+
+---
+
+## Repository layout
+
+The HPC working tree mirrors `github.com/llinkas11/iceberg-seg`. Materialised pkls, model checkpoints, and inference outputs are HPC-only (too large for git).
 
 ```
 iceberg-rework/
-├── README.md
-├── requirements.txt
-├── job.slurm
-├── new-plan.txt                         ← original rework plan from advisor
-│
-├── scripts/                             ← all pipeline scripts (editable)
-│   ├── audit_fisser_provenance.py       ← map Fisser chips to tifs, parse dates, compute IC
-│   ├── filter_small_icebergs.py         ← remove icebergs < 40m RL, merge shadow into iceberg
-│   ├── filter_quality.py                ← annotation-aware IC filtering (Fisser 10km method adapted)
-│   ├── fetch_met_data.py                ← ERA5 wind speed + temperature for all chips
-│   ├── visualize_missed_icebergs.py     ← find unannotated bright objects 40-500m RL
-│   ├── descriptive_stats.py             ← per-iceberg histograms, tables, Fisser comparison
-│   ├── build_clean_dataset.py           ← merge filtered data, 60/15/25 split, binary masks
-│   ├── balance_training.py              ← 2:1 oversampling/undersampling per area bin
-│   ├── train.py                         ← UNet++ training (from smishra, unchanged)
-│   ├── predict_tifs.py                  ← inference on .tif chips (from smishra, unchanged)
-│   ├── eval_methods.py                  ← pixel-wise IoU/precision/recall (from smishra)
-│   ├── compare_areas.py                 ← area statistics + plots (from smishra)
-│   ├── run_all_methods.sh               ← run all 6 methods on one SZA bin
-│   ├── run_pipeline.sh                  ← chip -> UNet++ -> threshold pipeline
-│   └── ... (other scripts from smishra)
-│
-├── data/
-│   ├── annotations_filtered.coco.json   ← COCO with icebergs < 40m RL removed
-│   ├── fisser_filtered/                 ← Fisser masks: shadow merged, < 40m RL removed
-│   ├── v3_clean/                        ← 60/15/25 split (916 chips, IC-filtered, binary masks)
-│   │   ├── train_validate_test/         ← X_train.pkl, Y_train.pkl, etc.
-│   │   └── split_log.csv               ← extended metadata per chip
-│   └── v3_balanced/                     ← balanced training set (340 train chips)
-│       ├── train_validate_test/         ← balanced X_train.pkl, unchanged val/test
-│       └── balance_report.csv
-│
-├── reference/
-│   ├── fisser_provenance_audit.csv      ← Fisser chip tif accessibility + IC + dates
-│   ├── fisser_quality_filter.csv        ← Fisser IC filter results (old Otsu method, superseded)
-│   ├── ic_filter_10km.csv               ← 10km block IC results for Roboflow chips
-│   ├── met_data.csv                     ← ERA5 wind + temperature per chip
-│   ├── filter_40m_summary.csv           ← before/after counts for 40m RL filter
-│   ├── missed_icebergs_summary.csv      ← unannotated bright object candidates
-│   ├── descriptive_stats.csv            ← per-bin iceberg/ocean/contrast statistics
-│   └── b08_analysis_results_discussion.md ← results, discussion, methods for IC/B08 analysis
-│
-├── viz/
-│   ├── filter_40m/                      ← before/after visualizations for 40m cutoff
-│   │   ├── coco/                        ← Roboflow chips
-│   │   └── fisser/                      ← Fisser chips
-│   ├── missed_icebergs/                 ← side-by-side original + annotated/missed
-│   └── descriptive_stats/               ← all histograms and table figures
-│       ├── hist_root_length.png         ← per-bin subplots
-│       ├── hist_month.png
-│       ├── hist_wind.png
-│       ├── hist_temp.png
-│       ├── hist_area.png                ← per-bin + log-log power law
-│       ├── hist_iceberg_vs_neighborhood_b08.png  ← cf. Fisser 2024 Fig. 9
-│       ├── table_iceberg_b08_by_sza.png
-│       ├── table_iceberg_b08_pixels_by_sza.png
-│       ├── table_sza_characterization.png
-│       ├── table_annotation_aware_ic.png
-│       ├── table_relative_abundance.png
-│       ├── table_fisser_comparison.png
-│       └── table_b08_per_sza.png
-│
-└── model/                               ← (empty until retraining)
+|-- README.md                              quick-start; sibling of this file
+|-- requirements.txt                       (PyYAML, scikit-image, scipy, pydensecrf2, etc.)
+|-- plan.md                                project state
+|-- new-plan.txt                           original advisor brief
+|-- job.slurm                              legacy training launcher (superseded by slurm/)
+|
+|-- configs/                               configuration system (Phase 4 of refactor)
+|   |-- baselines/baseline_v1.yaml         canonical baseline; every experiment inherits
+|   |-- experiments/exp_*.yaml             14 experiments: A0-A6, B0-B5, baseline_v1, ablation_no_aug
+|   |-- balancing/scheme_*.yaml            9 schemes (A through I)
+|   |-- datasets/                          (reserved for dataset recipe YAMLs)
+|   `-- methods/                           (reserved; methods configured in baseline_v1.yaml today)
+|
+|-- scripts/                               all pipeline code
+|   |-- _method_common.py                  shared provenance helpers + SKIP_* constants
+|   |-- _fig_registry.py                   append-only figure archive + figures.md index
+|   |-- audit_fisser_provenance.py         map Fisser chips to tifs, parse dates
+|   |-- filter_small_icebergs.py           40 m RL filter, shadow merge
+|   |-- filter_quality.py                  IC filter (annotation-aware, B08 >= 0.22)
+|   |-- fetch_met_data.py                  ERA5 wind + temperature
+|   |-- visualize_missed_icebergs.py       unannotated bright-object scan
+|   |-- descriptive_stats.py               per-iceberg histograms + tables
+|   |-- build_clean_dataset.py             v4_clean manifest + pkls + synthetic Fisser tifs
+|   |-- build_lt65_nulls.py                lt65 GT0 chip selection
+|   |-- build_v4_test_pools.py             per-bin test pools for 2:1 sampling at eval time
+|   |-- build_gt_positive_training.py      drop-GT0 training variant builder (scheme A)
+|   |-- balance_training.py                staged balancing (schemes A through D today)
+|   |-- prepare_test_chips_dir.py          symlink test tifs by manifest into per-bin dirs
+|   |-- train.py                           UNet++ training (binary, seed-required under ICEBERG_EXPERIMENT=1)
+|   |-- predict_tifs.py                    UNet++ inference + softmax probs + polygons
+|   |-- threshold_tifs.py                  TR method
+|   |-- otsu_threshold_tifs.py             OT method
+|   |-- threshold_probs.py                 UNet_TR method
+|   |-- otsu_probs.py                      UNet_OT method
+|   |-- densecrf_tifs.py                   UNet_CRF method
+|   |-- crf_utils.py                       pydensecrf2 wrapper
+|   |-- run_methods.sh                     one manifest + one checkpoint -> 6 methods x 4 bins
+|   |-- run_experiment.py                  manifest -> train -> infer -> evaluate -> figures
+|   |-- validate_experiment.py             single-controlled-variable rule
+|   |-- eval_methods.py                    chip-level IoU + MAE + MSE table
+|   |-- eval_per_iceberg.py                per-pair MAE + IoU (Hungarian matching)
+|   |-- compare_model_eval.py              baseline vs variant comparison tables and heatmaps
+|   `-- make_figure21_*.py                 GT-positive IoU heatmap generator
+|
+|-- slurm/                                 sbatch wrappers
+|   |-- _common.sh                         shared bash preamble (ROOT, PY, ICEBERG_EXPERIMENT)
+|   |-- baseline_v1.slurm                  full pipeline from scratch
+|   `-- baseline_v1_resume.slurm           resume from an existing trained checkpoint
+|
+|-- data/
+|   |-- annotations_filtered.coco.json     COCO with < 40 m RL icebergs removed
+|   |-- fisser_filtered/                   Fisser pkls with shadow merged + 40 m filter
+|   |-- v3_clean/                          legacy 60/15/25 build (kept for backward comparison)
+|   |-- v3_balanced/                       legacy 2:1 area-binned balanced training set
+|   |-- v4_clean/                          current canonical dataset
+|   |   |-- manifest.json                  single source of truth, chips_sha = fc4b3b16334f2916...
+|   |   |-- split_log.csv                  per-chip metadata
+|   |   `-- train_validate_test/           materialised pkls
+|   |-- v4_clean_lt65_balanced/            additive: 28 lt65 pos + 29 lt65 null
+|   |-- v4_test_pools/<bin>/{pos,null}/    per-bin test chip pools for 2:1 sampling
+|   `-- raw_chips/fisser/<chip_stem>.tif   330 synthetic GeoTIFFs for Fisser pkls
+|
+|-- reference/
+|   |-- fisser_provenance_audit.csv
+|   |-- met_data.csv                       ERA5 wind + temperature
+|   |-- descriptive_stats.csv              per-bin iceberg + ocean + contrast statistics
+|   |-- lt65_nulls_selected.csv            29 lt65 GT0 chips picked for the test pool
+|   |-- v4_test_pools.csv                  per-bin test pool manifest
+|   |-- b08_analysis_results_discussion.md IC + B08 narrative + tables
+|   `-- descriptive_stats_results_discussion.md
+|
+|-- viz/
+|   |-- filter_40m/{coco,fisser}/          before-and-after for the 40 m cutoff
+|   |-- missed_icebergs/                   side-by-side originals + missed-candidate overlays
+|   |-- descriptive_stats/                 histograms + tables
+|   `-- lt65_nulls_qc/contact_sheet.png    QC on the 29 selected nulls
+|
+|-- model/                                 trained checkpoints (legacy v3 runs preserved)
+|
+|-- runs/                                  experiment outputs
+|   `-- exp_baseline_v1/<timestamp>/
+|       |-- model/best_model.pth
+|       |-- model/training_config.json
+|       |-- model/training_log.csv
+|       |-- inference/<sza_bin>/<METHOD>/  per-method gpkgs + method_config.json + skipped_chips.csv
+|       |-- evaluation/                    chip-level CSVs from eval_methods.py
+|       `-- per_iceberg/                   per-pair CSVs from eval_per_iceberg.py
+|
+|-- logs/baseline/                         slurm stdout + stderr
+|-- fig-archive/                           append-only figure archive (per Phase 6)
+`-- figures.md                             live index of latest figures, with captions
 ```
 
 ---
 
-## Data Sources (read-only, in smishra/rework/)
+## v4_clean dataset
 
-| Item | Path (under smishra/rework/) | Description |
-|------|------------------------------|-------------|
-| Fisser chips | `data/fisser_original/train_validate_test/` | 398 pkl chips (sza_lt65) |
-| Roboflow COCO | `data/roboflow_export/train/train/` | 586 images + 18,322 annotations |
-| Combined v2 pkls | `data/train_validate_test/` | smishra's 984-chip dataset (not used directly) |
-| Split log | `data/split_log.csv` | smishra's original split mapping |
-| Chip tifs | `chips/{KQ,SK}/{sza_bin}/tifs/` | 23,981 GeoTIFF chips (symlinks) |
-| Test chips | `test_chips/{sza_bin}/` | smishra's 96 held-out chips |
-| Fisser tif index | `reference/fisser_index.csv` | Fisser pkl -> tif path mapping |
-| Scene catalogue | `reference/scene_catalogue.csv` | 319 S2 scenes with metadata |
-| Model checkpoint | `model/s2_v2_aug/best_model.pth` | smishra's best model (test IoU 0.3617) |
-
----
-
-## v3 Dataset (this rework)
-
-### Processing Pipeline
+The canonical dataset is `data/v4_clean/`. Build / verify with:
 
 ```
-Fisser pkls (398)  ──┐
-                     ├─ merge shadow (class 2 -> 1)
-Roboflow COCO (586) ─┤  remove icebergs < 40m RL
-                     ├─ IC quality filter (68 Fisser chips removed)
-                     ├─ 60/15/25 stratified split -> 916 chips
-                     ├─ annotation-aware IC masking (training only, IC >= 15%)
-                     └─ 2:1 area-bin balancing (training only) -> 364 train chips
+python scripts/build_clean_dataset.py
 ```
 
-### v3_clean Split (before balancing)
+That script produces `manifest.json`, `split_log.csv`, and the `train_validate_test/*.pkl` pyramids. It also writes 330 synthetic GeoTIFFs under `data/raw_chips/fisser/` so evaluation can find Fisser chips through the same code path as Roboflow chips.
 
-| Split | Total | sza_lt65 | sza_65_70 | sza_70_75 | sza_gt75 | Null |
-|-------|-------|----------|-----------|-----------|----------|------|
-| Train | 551 | 214 | 61 | 95 | 181 | 202 |
-| Val | 137 | 59 | 20 | 14 | 44 | 50 |
-| Test | 228 | 57 | 57 | 57 | 57 | 109 |
+### Composition
 
-### v3_balanced Training Set
+| | Total | sza_lt65 | sza_65_70 | sza_70_75 | sza_gt75 |
+|---|---|---|---|---|---|
+| Train | 551 | 226 (Fisser) | 56 | 83 | 186 |
+| Val   | 137 | 47 (Fisser) | 14 | 26 | 50 |
+| Test  | 228 | 57 (Fisser) | 57 | 57 | 57 |
 
-| Bin | Original | Balanced | Action |
-|-----|----------|----------|--------|
-| null | 199 | 110 | undersampled |
-| rl_40_100 | 55 | 55 | unchanged |
-| rl_100_300 | 208 | 110 | undersampled |
-| rl_300_plus | 89 | 89 | unchanged |
-| **Total** | **551** | **364** | |
+Source breakdown: every lt65 chip is Fisser-sourced; every other-bin chip is Roboflow-annotated.
 
-Class distribution (training): ocean 93.0%, iceberg 7.0%
+Class distribution (training pixels): ocean 94.4 %, iceberg 5.6 %.
 
----
+### Identity
 
-## Key Methodological Decisions
+Every chip row in `manifest.json` carries `chip_stem`, `tif_path`, `tif_sha`, `sza_bin`, `source`, `n_icebergs`, `has_iceberg`, `ic_aware`, `split`, `pkl_position`. A single `chips_sha` over the sorted (chip_stem, tif_sha, split) tuples is the dataset identity. Every downstream output stamps that hash so cross-experiment reproducibility can be verified.
 
-### Shadow Merge
-Fisser's 3-class masks (ocean/iceberg/shadow) are reduced to binary (iceberg only) by remapping shadow (class 2) into iceberg (class 1) before connected component analysis. This aligns with Roboflow annotations which do not distinguish shadow. The model performs binary segmentation (single class: iceberg). Merging bridges fragmented iceberg components, nearly doubling the icebergs surviving the 40m filter (16,343 to 32,536 in Fisser Y_train).
-
-### 40m Root-Length Cutoff
-Individual icebergs (connected components) smaller than 16 pixels (1,600 m2, 40 m root length) are removed to match the Fisser (2025) dataset cutoff. Applied to both COCO annotations (by area field) and Fisser masks (by connected component size after shadow merge).
-
-### IC Filtering
-Annotation-aware chip-level IC using the Fisser B08 >= 0.22 threshold (= 0.12 corrected). Annotated iceberg pixels are excluded from IC calculation. Training chips with IC >= 15% have bright non-annotated pixels masked to zero. Validation and test chips are never masked. Full justification in `reference/b08_analysis_results_discussion.md`.
-
-### DN Offset
-All reflectances are +0.10 high due to processing baseline offset. Fisser's 0.12 = our 0.22. chip_sentinel2.py does DN x 1e-4 without subtracting 1000. UNet++ trained on offset-shifted chips, internally consistent.
+Current chips_sha: `fc4b3b16334f2916...`.
 
 ---
 
-## Remaining Steps
+## How experiments run
 
-- [x] Implement annotation-aware IC masking in build_clean_dataset.py (2026-04-16)
-- [x] Rebuild v3_clean and v3_balanced with IC masking applied to training chips (2026-04-16: 193 train chips masked, val/test untouched)
-- [x] Implement new evaluation metrics (MAE, RERL, contrast) in eval_per_iceberg.py (script written; runs after Step below)
-- [ ] Retrain UNet++ (binary) on v3_balanced: `sbatch job.slurm` from moosehead (or `python scripts/train.py --mode s2 --data_dir data/v3_balanced --out_dir model/v3_balanced_aug`)
-- [ ] Run all 6 methods on new test set (run_all_methods.sh paths must be updated for v3 test chips)
-- [ ] Run eval_per_iceberg.py and compare results with Fisser 2025
+Three layers, top to bottom:
+
+1. **Slurm script** (`slurm/baseline_v1.slurm`, `slurm/baseline_v1_resume.slurm`): SBATCH directives + source `slurm/_common.sh` + invoke the runner.
+2. **Experiment runner** (`scripts/run_experiment.py`): given an experiment id, walks the five stages (manifest, train, infer, evaluate, figures), stamps provenance into every output.
+3. **Stage scripts** (`train.py`, `run_methods.sh`, `eval_methods.py`, `eval_per_iceberg.py`): the actual work.
+
+The experiment runner refuses to start unless `validate_experiment.py` accepts the experiment YAML. The validator enforces the single-controlled-variable rule: an experiment may touch only one of `data | methods | augmentation | training | inference | evaluation` unless it explicitly declares `controlled_variable:`.
+
+`run_methods.sh` refuses to run if the checkpoint's `training_config.json.manifest_id` does not match the manifest you pass in (cross-manifest drift guard).
+
+`train.py` refuses to run without `--seed` under `ICEBERG_EXPERIMENT=1` (set by every slurm wrapper). Every published checkpoint is reproducible; the seed propagates to Python, NumPy, Torch CPU and CUDA, and the cuDNN deterministic flag.
 
 ---
 
-## Notes
+## Running baseline_v1 from a clean slate
 
-- All scripts point to llinkas paths for script execution and smishra paths for source data.
-- The `filter_quality.py` script was rewritten from Otsu-based to Fisser's 10km block method, then further refined to annotation-aware chip-level. The ic_filter_10km.csv and fisser_quality_filter.csv are intermediate outputs from earlier iterations.
-- train.py uses num_classes=1 (binary segmentation) for all modes. Inference scripts expand the single-channel sigmoid output to 2-band probs [P(ocean), P(iceberg)] for downstream compatibility with threshold and CRF scripts.
-- Validation and test sets in v3_balanced are identical to v3_clean (only training is balanced).
+```
+ssh moosehead
+cd /mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework
+sbatch slurm/baseline_v1.slurm
+```
+
+If the run fails between stages (most commonly inference, because of an unfamiliar dependency), the slurm script prints the exact resume command. Resume with:
+
+```
+RUN_TS=<timestamp_dir> sbatch slurm/baseline_v1_resume.slurm
+```
+
+---
+
+## Methodological decisions (capsule version)
+
+### Shadow merge
+Fisser's three-class masks (ocean, iceberg, shadow) are reduced to binary by remapping shadow into iceberg before any analysis. Aligns Fisser annotations with Roboflow annotations (which do not distinguish shadow). Documented in `reference/descriptive_stats_results_discussion.md` Section 2.
+
+### 40 m root-length cutoff
+Connected components smaller than 16 pixels (1,600 m$^2$, 40 m root length) are removed. Matches Fisser (2025) dataset minimum.
+
+### Annotation-aware IC filtering
+IC = fraction of non-annotated pixels with B08 >= 0.22. Training chips with IC >= 15 % have bright non-annotated pixels masked to zero. Validation and test never masked. 193 training chips were masked in the v4_clean build. Justification: `reference/b08_analysis_results_discussion.md` sections 3.1-3.6.
+
+### DN offset
+Reflectances are +0.10 high relative to Fisser's space because chip_sentinel2.py applies the 10$^{-4}$ scaling without subtracting the 1000 DN N0500 offset. Fisser's 0.12 = our 0.22. Internal consistency holds because every chip shares the offset.
+
+---
+
+## Critical numbers (verified 2026-04-24)
+
+- v4_clean: 916 chips total. chips_sha = `fc4b3b16334f2916...`.
+- Splits: 551 / 137 / 228. Test cap: 57 chips per SZA bin.
+- baseline_v1 trained checkpoint: 100 epochs, val IoU 0.323, test IoU 0.314 (pixel-level), seed 42.
+- Six methods produce inference output for sza_lt65 and sza_65_70 in the current run; sza_70_75 and sza_gt75 in flight on job 56554.

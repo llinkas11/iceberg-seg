@@ -1,24 +1,20 @@
 """
-build_v4_test_pools.py: materialise the five test-chip pools that downstream
-model variants will 2:1 pos:null sample from.
+build_v4_test_pools.py: materialise the four per-bin test-chip pools that
+downstream model variants will 2:1 pos:null sample from.
 
-Pool definitions:
+Pool definitions (all test chips pass through raw: project convention is to
+never IC-mask or re-filter test chips; training chips handle masking separately
+in Step 6):
 
-  og_szalt65    Fisser lt65 test chips exactly as v3 has them (no additional
-                IC filter) + 29 our_lt65_null chips.
-  sza_lt65      Same, but Fisser positives must pass our chip-level IC gate
-                (B08 >= B08_THRESHOLD fraction < IC_THRESHOLD).
-  sza_65_70     All v3 test chips in this bin (Roboflow source).
-  sza_70_75     Same.
-  sza_gt75      Same.
-
-Fisser positives already passed Fisser's own cloud filter, so no QA60 gate is
-applied here (Fisser chips have no matching SAFE zips in sentinel2_downloads).
+  sza_lt65     Fisser lt65 test positives as-is + 29 our_lt65_null chips.
+  sza_65_70    All v3 test chips in this bin (Roboflow source).
+  sza_70_75    Same.
+  sza_gt75     Same.
 
 For each pool, chips land under:
 
-  data/v4_test_pools/<bin>/pos/<chip>.tif
-  data/v4_test_pools/<bin>/null/<chip>.tif
+  data/v4_test_pools/<bin>/pos/<chip_stem>.tif
+  data/v4_test_pools/<bin>/null/<chip_stem>.tif
 
 and a single manifest is written to:
 
@@ -39,12 +35,12 @@ import numpy as np
 import pandas as pd
 import rasterio as rio
 
-from build_clean_dataset import B08_THRESHOLD, IC_THRESHOLD
+from build_clean_dataset import B08_THRESHOLD, SYNTHETIC_FISSER_DIR, SZA_BINS
+from build_lt65_nulls import OUR_LT65_NULL_SOURCE, SZA_LT65, null_stem
+from prepare_test_chips_dir import link_or_copy
 
 
-FISSER_RAW_DIR = "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/data/raw_chips/fisser"
-OUR_LT65_NULL_SOURCE = "our_lt65_null"
-NON_LT65_BINS = ("sza_65_70", "sza_70_75", "sza_gt75")
+NON_LT65_BINS = tuple(b for b in SZA_BINS if b != SZA_LT65)
 
 
 # 1. Helpers
@@ -53,7 +49,7 @@ def resolve_tif(row):
     if isinstance(row.tif_path, str) and row.tif_path and row.tif_path != "nan":
         return row.tif_path
     if row.source == "fisser":
-        return os.path.join(FISSER_RAW_DIR, f"{row.stem}.tif")
+        return os.path.join(SYNTHETIC_FISSER_DIR, f"{row.stem}.tif")
     raise FileNotFoundError(f"no tif_path for row {row.stem} source={row.source}")
 
 
@@ -64,84 +60,64 @@ def compute_ic_frac(tif_path):
     return float((b08 >= B08_THRESHOLD).mean())
 
 
-def copy_chip(src, dst_dir, stem):
-    """Copy tif into dst_dir with canonical '<stem>.tif' name."""
+def materialise_chip(src, dst_dir, chip_stem):
+    """Copy tif into dst_dir as '<chip_stem>.tif'; return the dest path."""
     os.makedirs(dst_dir, exist_ok=True)
-    dst = os.path.join(dst_dir, f"{stem}.tif")
-    if os.path.abspath(src) != os.path.abspath(dst):
-        shutil.copy2(src, dst)
+    dst = os.path.join(dst_dir, f"{chip_stem}.tif")
+    link_or_copy(src, dst, copy=True)
     return dst
+
+
+def manifest_row(bin_label, gt_label, chip_stem, source, n_icebergs,
+                 ic_frac, tif_src, tif_pool):
+    return {
+        "bin_label": bin_label, "gt_label": gt_label, "chip_stem": chip_stem,
+        "source": source, "n_icebergs": int(n_icebergs), "ic_frac": ic_frac,
+        "tif_src": tif_src, "tif_pool": tif_pool,
+    }
 
 
 # 2. Pool builders
 def rows_for_bin(split_log, bin_name):
-    """v3-style test rows for a given sza_bin."""
-    return split_log[(split_log.sza_bin == bin_name) & (split_log.split == "test")].copy()
+    return split_log[(split_log.sza_bin == bin_name) & (split_log.split == "test")]
 
 
-def build_lt65_pools(v3_split, nulls_df, out_root):
-    """
-    og_szalt65: v3 lt65 test (56 pos + 1 null) + 29 our_lt65_null (30 null total).
-    sza_lt65:   v3 lt65 test positives that pass chip-level IC<15% + 29 our_lt65_null.
-    Returns a list of manifest rows.
-    """
+def build_lt65_pool(v3_split, nulls_df, out_root):
+    """Fisser lt65 test positives as-is plus the 29 our_lt65_null chips."""
     rows = []
-    lt65 = rows_for_bin(v3_split, "sza_lt65")
+    lt65 = rows_for_bin(v3_split, SZA_LT65)
+    assert (lt65.n_icebergs == 0).sum() <= 1, \
+        "v3 lt65 test has more than one pre-existing null; builder must be updated"
 
     for _, r in lt65.iterrows():
+        if r.n_icebergs == 0:
+            continue  # Fisser null replaced by our_lt65_null below
         tif_src = resolve_tif(r)
         ic_frac = compute_ic_frac(tif_src)
-        gt_label = "pos" if r.n_icebergs > 0 else "null"
-        chip_stem = r.chip_stem
-
-        # og keeps every Fisser chip.
-        og_dst = copy_chip(tif_src, os.path.join(out_root, "og_szalt65", gt_label), chip_stem)
-        rows.append({
-            "bin_label": "og_szalt65", "gt_label": gt_label,
-            "chip_stem": chip_stem, "source": r.source,
-            "n_icebergs": int(r.n_icebergs), "ic_frac": ic_frac,
-            "tif_src": tif_src, "tif_pool": og_dst,
-        })
-
-        # sza_lt65 applies our IC gate to Fisser positives only; drops the Fisser
-        # null because we're replacing it with our_lt65_null below.
-        if gt_label == "pos" and ic_frac < IC_THRESHOLD:
-            sza_dst = copy_chip(tif_src, os.path.join(out_root, "sza_lt65", "pos"), chip_stem)
-            rows.append({
-                "bin_label": "sza_lt65", "gt_label": "pos",
-                "chip_stem": chip_stem, "source": r.source,
-                "n_icebergs": int(r.n_icebergs), "ic_frac": ic_frac,
-                "tif_src": tif_src, "tif_pool": sza_dst,
-            })
+        dst = materialise_chip(tif_src, os.path.join(out_root, SZA_LT65, "pos"), r.chip_stem)
+        rows.append(manifest_row(SZA_LT65, "pos", r.chip_stem, r.source,
+                                  r.n_icebergs, ic_frac, tif_src, dst))
 
     for _, r in nulls_df.iterrows():
-        stem = f"lt65null_{r.region}_{r.stem}_r{int(r.row):04d}_c{int(r.col):04d}"
-        ic_frac = float(r.ic_frac)
-        for bin_label in ("og_szalt65", "sza_lt65"):
-            dst = copy_chip(r.tif_path, os.path.join(out_root, bin_label, "null"), stem)
-            rows.append({
-                "bin_label": bin_label, "gt_label": "null",
-                "chip_stem": stem, "source": OUR_LT65_NULL_SOURCE,
-                "n_icebergs": 0, "ic_frac": ic_frac,
-                "tif_src": r.tif_path, "tif_pool": dst,
-            })
+        stem = null_stem(r.region, r.stem, r.row, r.col)
+        dst = materialise_chip(r.tif_path, os.path.join(out_root, SZA_LT65, "null"), stem)
+        rows.append(manifest_row(SZA_LT65, "null", stem, OUR_LT65_NULL_SOURCE,
+                                  0, float(r.ic_frac), r.tif_path, dst))
     return rows
 
 
 def build_non_lt65_pool(v3_split, bin_name, out_root):
-    """All v3 test chips for one non-lt65 bin go in, no refiltering."""
+    """All v3 test chips for one non-lt65 bin go in as-is. ic_frac is not
+    computed here (purely informational, and reading every tif over NFS is
+    the dominant cost). Set to None; the manifest column is still present.
+    """
     rows = []
     for _, r in rows_for_bin(v3_split, bin_name).iterrows():
         tif_src = resolve_tif(r)
-        ic_frac = compute_ic_frac(tif_src)
         gt_label = "pos" if r.n_icebergs > 0 else "null"
-        dst = copy_chip(tif_src, os.path.join(out_root, bin_name, gt_label), r.chip_stem)
-        rows.append({
-            "bin_label": bin_name, "gt_label": gt_label,
-            "chip_stem": r.chip_stem, "source": r.source,
-            "n_icebergs": int(r.n_icebergs), "ic_frac": ic_frac,
-            "tif_src": tif_src, "tif_pool": dst,
-        })
+        dst = materialise_chip(tif_src, os.path.join(out_root, bin_name, gt_label), r.chip_stem)
+        rows.append(manifest_row(bin_name, gt_label, r.chip_stem, r.source,
+                                  r.n_icebergs, None, tif_src, dst))
     return rows
 
 
@@ -165,7 +141,7 @@ def main():
         shutil.rmtree(args.out_root)
 
     all_rows = []
-    all_rows.extend(build_lt65_pools(v3, nulls, args.out_root))
+    all_rows.extend(build_lt65_pool(v3, nulls, args.out_root))
     for bin_name in NON_LT65_BINS:
         all_rows.extend(build_non_lt65_pool(v3, bin_name, args.out_root))
 
