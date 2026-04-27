@@ -1,5 +1,5 @@
 """
-descriptive_stats.py, Per-iceberg descriptive statistics and exploratory analysis.
+descriptive_stats.py: Per-iceberg descriptive statistics and exploratory analysis.
 
 Produces:
   1. Per-iceberg root-length histogram (one subplot per SZA bin)
@@ -32,7 +32,7 @@ from scipy.ndimage import label as cc_label, binary_dilation
 from PIL import Image, ImageDraw
 import rasterio
 
-from _fig_registry import write as write_fig
+from _fig_registry import write as write_fig, write_table as save_table_as_figure
 
 # -- Paths --------------------------------------------------------------------
 SMISHRA = "/mnt/research/v.gomezgilyaspik/students/smishra/rework"
@@ -60,32 +60,6 @@ S2_DATE_RE = re.compile(r"S2[AB]_MSIL1C_(\d{8})T")
 
 def strip_rf_hash(fn):
     return RF_HASH_RE.sub(".png", fn)
-
-
-def save_table_as_figure(headers, rows, title, slug, caption, out_dir,
-                         col_widths=None):
-    """Render a table as a PNG figure routed through the figure registry."""
-    n_cols = len(headers)
-    n_rows = len(rows)
-    fig_w = max(8, n_cols * 1.8)
-    fig_h = max(2, 0.4 * (n_rows + 2))
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
-    ax.axis("off")
-    table = ax.table(
-        cellText=rows, colLabels=headers, loc="center", cellLoc="center",
-    )
-    table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1, 1.5)
-    for (r, c), cell in table.get_celld().items():
-        if r == 0:
-            cell.set_facecolor("#333333")
-            cell.set_text_props(color="white", fontweight="bold")
-        elif r % 2 == 0:
-            cell.set_facecolor("#f0f0f0")
-    ax.set_title(title, fontsize=12, fontweight="bold", pad=15)
-    write_fig(fig, slug=slug, caption=caption, out_dir=out_dir)
-    plt.close(fig)
 
 
 def load_coco_per_iceberg(coco_path, split_log_path):
@@ -562,9 +536,9 @@ def main():
     rls_all = np.sqrt(areas_all)
     headers = ["Metric", "Our Dataset", "Fisser 2025"]
     tbl_rows = [
-        ["N icebergs", f"{len(areas_all):,}", ","],
+        ["N icebergs", f"{len(areas_all):,}", "-"],
         ["Mean area (m2)", f"{areas_all.mean():,.0f}", "2,468"],
-        ["Median area (m2)", f"{np.median(areas_all):,.0f}", ","],
+        ["Median area (m2)", f"{np.median(areas_all):,.0f}", "-"],
         ["Max area (m2)", f"{areas_all.max():,.0f}", "399,700"],
         ["Mean RL (m)", f"{rls_all.mean():.0f}", "~50"],
         ["Max RL (m)", f"{rls_all.max():.0f}", "632"],

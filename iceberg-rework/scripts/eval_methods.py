@@ -460,10 +460,10 @@ def print_summary_table(summary, metric="iou"):
 
     col_w  = 14
     header = f"{'Method':<12}" + "".join(f"{SZA_LABELS.get(b, b):>{col_w}}" for b in bins)
-    print(f"\n{'─'*len(header)}")
+    print(f"\n{'-'*len(header)}")
     print(f"Mean {metric.upper()} vs ground truth")
     print(header)
-    print(f"{'─'*len(header)}")
+    print(f"{'-'*len(header)}")
     for m in methods:
         row = f"{m:<12}"
         for b in bins:
@@ -474,7 +474,7 @@ def print_summary_table(summary, metric="iou"):
                 val = "-"
             row += f"{val:>{col_w}}"
         print(row)
-    print(f"{'─'*len(header)}")
+    print(f"{'-'*len(header)}")
 
 
 def build_summary(df):
@@ -580,7 +580,7 @@ def main():
         print("\nNo results, run run_all_methods.sh first.")
         return
 
-    # ── Save per-chip results ─────────────────────────────────────────────────
+    # -- Save per-chip results -------------------------------------------------
     df = pd.DataFrame(all_results)
     df["sza_bin"] = pd.Categorical(df["sza_bin"], categories=SZA_ORDER, ordered=True)
     df = df.sort_values(["method", "sza_bin", "pkl_position"]).reset_index(drop=True)
@@ -589,24 +589,24 @@ def main():
     df.to_csv(per_chip_path, index=False)
     print(f"\nPer-chip results → {per_chip_path}")
 
-    # ── Summary per (method, sza_bin), all test chips ───────────────────────
+    # -- Summary per (method, sza_bin), all test chips -----------------------
     summary = build_summary(df)
 
     summary_path = os.path.join(args.out_dir, "eval_summary.csv")
     summary.to_csv(summary_path, index=False)
     print(f"Summary → {summary_path}")
 
-    # ── Print tables ──────────────────────────────────────────────────────────
+    # -- Print tables ----------------------------------------------------------
     for metric in ["iou", "precision", "recall"]:
         print_summary_table(summary, metric)
 
-    # ── Plots ─────────────────────────────────────────────────────────────────
+    # -- Plots -----------------------------------------------------------------
     print("\nGenerating plots...")
     plot_iou_heatmap(summary, args.out_dir)
     for metric in ["iou", "precision", "recall"]:
         plot_metric_bars(summary, metric, args.out_dir)
 
-    # ── Positive-GT-only summary ──────────────────────────────────────────────
+    # -- Positive-GT-only summary ----------------------------------------------
     df_pos = df[df["gt_pixels"] > 0].copy()
     if len(df_pos):
         summary_pos = build_summary(df_pos)
@@ -624,7 +624,7 @@ def main():
             plot_metric_bars(summary_pos, metric, args.out_dir,
                              slug_suffix="_gt_positive_only")
 
-    print(f"\n{'─'*50}")
+    print(f"\n{'-'*50}")
     print(f"Outputs in: {args.out_dir}/")
     print(f"  eval_results.csv      , per-chip IoU/precision/recall/F1")
     print(f"  eval_summary.csv      , mean metrics per (method, sza_bin)")

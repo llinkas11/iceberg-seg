@@ -360,8 +360,7 @@ def plot_ratio(stats, out_dir):
         caption=(
             "Ratio of UNet++ mean iceberg area to each comparison method's "
             "mean iceberg area, by SZA bin. Ratio > 1 means UNet++ reports "
-            "larger icebergs than the comparison method (the threshold-based "
-            "methods tend to under-segment shadow-bridged blocks at high SZA)."
+            "larger icebergs than the comparison method."
         ),
         out_dir=out_dir,
     )
@@ -385,7 +384,7 @@ def print_comparison_table(stats):
         row = f"{SZA_LABELS.get(sza_bin, sza_bin):<14}"
         for m in methods:
             r = stats[(stats["sza_bin"] == sza_bin) & (stats["method"] == m)]
-            val = int(r["count"].values[0]) if len(r) else ","
+            val = int(r["count"].values[0]) if len(r) else "-"
             row += f"{str(val):>{col_w}}"
         print(row)
     print("-" * len(header))
@@ -398,7 +397,7 @@ def print_comparison_table(stats):
         row = f"{SZA_LABELS.get(sza_bin, sza_bin):<14}"
         for m in methods:
             r = stats[(stats["sza_bin"] == sza_bin) & (stats["method"] == m)]
-            val = f"{r['mean_m2'].values[0]:.1f}" if len(r) else ","
+            val = f"{r['mean_m2'].values[0]:.1f}" if len(r) else "-"
             row += f"{str(val):>{col_w}}"
         print(row)
     print("-" * len(header))
@@ -411,7 +410,7 @@ def print_comparison_table(stats):
         row = f"{SZA_LABELS.get(sza_bin, sza_bin):<14}"
         for m in methods:
             r = stats[(stats["sza_bin"] == sza_bin) & (stats["method"] == m)]
-            val = f"{r['total_m2'].values[0]:.0f}" if len(r) else ","
+            val = f"{r['total_m2'].values[0]:.0f}" if len(r) else "-"
             row += f"{str(val):>{col_w}}"
         print(row)
     print("-" * len(header))
