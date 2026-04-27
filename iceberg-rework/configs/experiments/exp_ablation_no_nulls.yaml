@@ -1,0 +1,26 @@
+# Ablation, not a progression step: baseline_v1 with GT0 training chips
+# dropped across all four SZA bins.
+#
+# Tests whether the model benefits from seeing empty water as a class signal
+# when training on the full multi-bin dataset. Parallel to the lt65-only A0
+# (Fisser positive-only) and A2 (our lt65 positive-only) experiments, but
+# scoped to baseline's all-bins manifest.
+
+id: exp_ablation_no_nulls
+inherits: baseline_v1
+
+change:
+  data:
+    balancing_scheme: scheme_A_fisser_original
+
+progression:
+  phase: ablation
+  step: null
+  compared_to: baseline_v1
+
+notes: |
+  scheme_A_fisser_original drops GT0 chips from training; val and test are
+  unchanged from v4_clean (the baseline test set still contains GT0 chips,
+  so the model is evaluated on inputs it never saw during training, which
+  is the intended ablation question). Augmentation, model, training params,
+  inference, and evaluation all match baseline_v1 exactly.
