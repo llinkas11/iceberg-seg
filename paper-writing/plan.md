@@ -1,8 +1,17 @@
 # Iceberg Segmentation Pipeline: Project State
 
-**Status:** Refactor complete (Phases 1-6). Configuration system, manifest schema, experiment runner, method runner, per-iceberg evaluator, and figure registry all in place. baseline_v1 trained successfully on `v4_clean`; method inference + evaluation re-running after dependency fix.
-**Last verified:** 2026-04-24.
-**Authoritative state:** this file. Methodology details: `methods_draft.md`. Experimental progression: `model_progression.md`. Repository design + audit: `refactor_plan.md`.
+**Status:** Refactor complete (Phases 1-6). v4_clean dataset built and frozen. baseline_v1 trained and evaluated. Phase A 2x3 grid (size balance x class balance) registered as 10 YAMLs, runner ready. Phase B method sweep is a single inference dispatch on the trained checkpoint, runner ready. Per-pair MAE + IoU tables published for the canonical baseline.
+
+**Last verified:** 2026-04-27.
+**Latest git commit:** `7f8b100` on `main`, github.com/llinkas11/iceberg-seg.
+**Authoritative state:** this file.
+**Methodology:** `methods_draft.md`.
+**Experimental progression:** `model_progression.md`.
+**Repository design + audit:** `refactor_plan.md`.
+
+This file is the single handoff document. Read top to bottom for full context.
+
+---
 
 ## Context
 
@@ -10,8 +19,8 @@ Reworking smishra's Sentinel-2 iceberg segmentation pipeline to match Fisser 202
 
 The current work is structured by progression:
 
-- **Phase A** walks the *dataset*: A0 (Fisser lt65 reproduction) -> A6 (our lt65 + nulls + augmentations + adaptive balancing).
-- **Phase B** walks the *method*: B0 (fixed B08 threshold) -> B5 (UNet++ + DenseCRF), all six on the Phase A winner.
+- **Phase A** walks the *dataset* in a 2x3 grid: A0 (Fisser lt65 reproduction) -> A6/A9 (our lt65 + nulls + augmentations + class balancing + size balancing).
+- **Phase B** walks the *method*: B0 (fixed B08 threshold) -> B5 (UNet++ + DenseCRF), all six on the Phase A winner. Single training run, six reports.
 
 See `model_progression.md` for the full table with motivations.
 
@@ -21,14 +30,15 @@ See `model_progression.md` for the full table with motivations.
 
 | ID | Issue | Resolution |
 |----|-------|------------|
-| PR-1 | CARRA vs ERA5 | ERA5 via Open-Meteo. Wind max 8.4 m s$^{-1}$ (all pass), 324 chips temp <= 0 C (mostly sza_gt75, documented as confound, not filtered). |
+| PR-1 | CARRA vs ERA5 | ERA5 via Open-Meteo. Wind max 8.4 m s$^{-1}$ (all pass). 324 chips temp <= 0 C (mostly sza_gt75, documented confound, not filtered). |
 | PR-2 | Fisser SAFE files | Not in downloads. Fisser chips accepted as pre-filtered by Fisser et al. IC computed from tif B08 directly using annotation-aware method. |
 | PR-3 | Root length definition | Per-individual-iceberg (connected component >= 16 px), not per-chip aggregate. |
-| PR-4 | Validation set | 65/15/25 train/val/test; effective split is 551/137/228 due to per-SZA-bin test caps (57 per bin). Validation used for checkpoint selection, never masked. |
+| PR-4 | Validation set | 65/15/25 train/val/test; effective split is 551/137/228 (test capped at 57 per SZA bin for cross-bin metric balance). Validation used for checkpoint selection, never masked. |
 | PR-5 | Re-annotation | 1,756 missed candidates found across 129 chips. Decision pending review of viz/missed_icebergs/. |
 | PR-6 | CatBoost / dynamic threshold | Deferred. Dynamic IC threshold rejected because 15-25 % of iceberg pixels fall below 0.22 at every SZA bin (b08_analysis_results_discussion.md §3.6). |
 | PR-7 | Shadow class | Merged into iceberg (class 2 -> 1). Model is binary. Shadow merge bridges fragmented icebergs, nearly doubling survivors after 40 m filter. |
-| PR-8 | Fisser test chip evaluability | All Fisser pkl chips now have synthetic GeoTIFFs at `data/raw_chips/fisser/<chip_stem>.tif` (3-band float32, 10 m identity transform, no CRS). eval_methods + eval_per_iceberg now load Fisser test chips through the same code path as Roboflow chips. |
+| PR-8 | Fisser test chip evaluability | All 330 Fisser pkl chips have synthetic GeoTIFFs at `data/raw_chips/fisser/<chip_stem>.tif`. eval_methods + eval_per_iceberg load Fisser test chips through the same code path as Roboflow chips. |
+| PR-9 | Augmentation vs class imbalance distinction | Augmentation diversifies *each chip's geometric views*, not *class frequency*. Oversample-only size balancing (scheme_J) addresses gradient-frequency imbalance separately, paired with augmentation. |
 
 ---
 
@@ -49,18 +59,21 @@ All reflectances +0.10 high (processing baseline >= 4.0 adds 1000 DN; chip_senti
 ### 5. Temperature Confound
 98.9 % of sza_gt75 chips have temp <= 0 C. Filtering would destroy the bin. Documented as confound, not filtered. Wind not a confound (max 8.4 m s$^{-1}$, all below 15 m s$^{-1}$). See `reference/descriptive_stats_results_discussion.md` §4.
 
+### 6. Oversample-only Size Balancing (new)
+Size balancing within positive chips uses oversample-only with a 4x replication cap. Replicate small / mid root-length bins up to the largest bin count; never undersample. Pairs with augmentation: each replicated chip gets a different random geometric variant per epoch, so the gradient sees more *distinct* instances of the rare bin without seeing identical pixels twice. Implemented in `balance_training.py.rebalance_area_bins(oversample_only=True, max_oversample_ratio=4.0)`.
+
 ---
 
 ## Pipeline Stages
 
-The refactored pipeline is now five named stages, all driven by `scripts/run_experiment.py`:
+The refactored pipeline is five named stages, all driven by `scripts/run_experiment.py`:
 
 ```
 1. manifest    Build or verify the data manifest (chip list + split + chips_sha)
 2. train       UNet++ training under ICEBERG_EXPERIMENT=1 (seed required)
 3. infer       All six methods on the trained checkpoint, one manifest
 4. evaluate    Chip-level (eval_methods) + per-pair (eval_per_iceberg) metrics
-5. figures     Registry-archived plots
+5. figures     Registry-archived plots (Phase 6 figure registry)
 ```
 
 Every stage stamps `experiment_id`, `chips_sha`, `git_sha`, `seed`, and final metrics into provenance JSON next to its outputs.
@@ -82,181 +95,302 @@ Every stage stamps `experiment_id`, `chips_sha`, `git_sha`, `seed`, and final me
 `fetch_met_data.py` -> `reference/met_data.csv`. 0 chips > 15 m s$^{-1}$ wind. 324 chips temp <= 0 C.
 
 ### Step 4: Missed Icebergs (2026-04-15)
-`visualize_missed_icebergs.py` -> `viz/missed_icebergs/`, `reference/missed_icebergs_summary.csv`. 1,756 missed candidates across 129 chips. Median RL 60.8 m.
+`visualize_missed_icebergs.py` -> `viz/missed_icebergs/` + `reference/missed_icebergs_summary.csv`. 1,756 missed candidates across 129 chips. Median RL 60.8 m.
 
 ### Step 5: Descriptive Statistics (2026-04-15)
 `descriptive_stats.py` -> `viz/descriptive_stats/` + `reference/descriptive_stats.csv` + `reference/descriptive_stats_results_discussion.md` + `reference/b08_analysis_results_discussion.md`.
 
-### Step 6: Clean Dataset Build (2026-04-16, rebuilt as v4_clean 2026-04-24)
+### Step 6: Clean Dataset Build (2026-04-24)
 `build_clean_dataset.py` -> `data/v4_clean/`. Replaces and supersedes the earlier `v3_clean` dir.
 
-- 916 chips total, 65/15/25 nominal split (effective 551/137/228 due to per-bin test caps).
+- 916 chips total. 65/15/25 nominal split; effective 551/137/228 (test capped at 57 per SZA bin).
 - 193 training chips IC-masked (5.9 M pixels zeroed; 1.4 M iceberg pixels preserved).
-- Test stratified to 57 chips per SZA bin.
-- 330 Fisser chips now have synthetic GeoTIFFs at `data/raw_chips/fisser/`. tif_path is populated in every chip row of the manifest, so evaluation no longer silently drops Fisser chips.
-- `manifest.json` is the single dataset identity. `chips_sha` (sha256 over chip_stem + tif_sha + split tuples) is the single hash that must match across runs.
+- 330 Fisser chips have synthetic GeoTIFFs at `data/raw_chips/fisser/`. tif_path is populated in every chip row of the manifest.
+- `manifest.json` is the single dataset identity. `chips_sha = fc4b3b16334f2916...`.
 
-### Step 7: Training-Set Variants and Balancing Schemes
-`balance_training.py` (rewritten 2026-04-23) consumes a clean dataset and applies a balancing scheme. Nine schemes are declared as YAML under `configs/balancing/`:
-
-| Scheme | Rule |
-|---|---|
-| A `fisser_original` | Drop GT0 training chips. |
-| B `fisser_plus_nulls` | Keep Fisser positives; inject GT0 chips at 1:1, lt65 only. |
-| C `our_lt65_plus_nulls` | As B but on our chip source. |
-| D `two_pos_per_null` | 2:1 GT+ : GT0 fixed pos-bias, all bins. |
-| E `natural` | No resampling. Explicit no-op for A/B partner runs. |
-| F `fixed_total_114` | Cap total to 114 chips, stratified by SZA + class. |
-| G `equalized_across_sza` | Equal per-SZA-bin count. |
-| H `custom` | Per-bin ratio table in YAML. |
-| I `two_to_one_adaptive` | 2:1 majority : minority, direction picked from natural per-bin distribution. |
-
-Strategy classes are deferred until the first scheme that has no existing implementation needs to run; A through D are covered by `balance_training.py` today.
-
-### Step 7c: Per-Bin Test Pools (2026-04-23)
-`build_v4_test_pools.py` -> `data/v4_test_pools/<bin>/{pos,null}/<chip_stem>.tif`. Manifest at `reference/v4_test_pools.csv`. Test chips pass through raw (no IC mask, no balancing). Used for cross-bin metric comparison at evaluation time.
-
-- Bin counts: lt65 56 pos / 29 null; sza_65_70 21 / 36; sza_70_75 20 / 37; sza_gt75 23 / 34.
-- 2:1 sampling cap per bin: lt65 56/28, sza_65_70 21/10, sza_70_75 20/10, sza_gt75 23/11. Cross-bin equalised cap is 20 pos / 10 null (bottlenecked by sza_70_75).
-
-### Step 7b: lt65 Null Chips (2026-04-23)
-`build_lt65_nulls.py`. 4,444 lt65 chips scanned; 278 accepted; 29 selected (6 KQ + 23 SK), ranked by ascending B08 p95 and descending dark-pixel fraction. Stratified to match the Fisser GT-positive regional distribution (19.5 % KQ / 80.5 % SK). Manifest at `reference/lt65_nulls_selected.csv`. QC contact sheet at `viz/lt65_nulls_qc/contact_sheet.png`.
+### Step 7: Test pool + lt65 nulls (2026-04-23)
+- `build_v4_test_pools.py` -> `data/v4_test_pools/<bin>/{pos,null}/<chip_stem>.tif`. Per-bin test pools for 2:1 sampling. Manifest at `reference/v4_test_pools.csv`. Test chips pass through raw (no IC mask, no balancing).
+- `build_lt65_nulls.py` -> 29 lt65 GT0 chips (6 KQ + 23 SK), ranked by ascending B08 p95 and stratified to match the Fisser GT-positive regional distribution. Manifest at `reference/lt65_nulls_selected.csv`. QC contact sheet at `viz/lt65_nulls_qc/contact_sheet.png`.
 
 ### Refactor Phase 1 (2026-04-23): provenance + seed + Fisser tifs
-- `_method_common.py`: shared `write_method_config`, `write_skipped_chips`, `load_manifest`, `get_git_sha`, `sha256_of_*`, `SKIP_*` constants. Single source of truth for method-output provenance.
-- `train.py`: refuses to run without `--seed` under `ICEBERG_EXPERIMENT=1`. Writes `training_config.json` next to `best_model.pth` (args, seed, manifest_id, git_sha, final metrics, experiment_mode flag).
-- `build_clean_dataset.py`: emits `manifest.json` with `chips_sha`. Synthesises GeoTIFFs for Fisser chips. Defaults to 65/15/25.
+- `_method_common.py`: shared `write_method_config`, `write_skipped_chips`, `load_manifest`, `get_git_sha`, `sha256_of_*`, `SKIP_*` constants.
+- `train.py` refuses to run without `--seed` under `ICEBERG_EXPERIMENT=1`. Writes `training_config.json` next to `best_model.pth`.
+- `build_clean_dataset.py` emits `manifest.json` with `chips_sha`. Synthesises GeoTIFFs for Fisser chips. Defaults to 65/15/25.
 
 ### Refactor Phase 2 (2026-04-23): unified runner
-- `run_methods.sh`: takes `--manifest <path>` and `--checkpoint <path>`. Refuses if the checkpoint's `training_config.json.manifest_id` does not match (cross-manifest drift guard).
-- `prepare_test_chips_dir.py`: reads `--manifest` directly to populate per-bin test chip dirs.
+- `run_methods.sh` takes `--manifest <path>` and `--checkpoint <path>`. Refuses on `chips_sha` mismatch (cross-manifest drift guard).
+- `prepare_test_chips_dir.py` reads `--manifest` directly.
 
-### Refactor Phase 3 (2026-04-23): balancing schemes
-Nine YAMLs landed under `configs/balancing/`. Strategy class layer deferred.
+### Refactor Phase 3 (2026-04-23): balancing schemes (now 12 schemes)
+Twelve declarative YAMLs under `configs/balancing/`:
+
+| Scheme | Stage 1 (class) | Stage 2 (size) |
+|---|---|---|
+| A `fisser_original` | drop GT0 | none |
+| B `fisser_plus_nulls` | 1:1 GT+/GT0 (lt65) | Fisser-style undersample |
+| C `our_lt65_plus_nulls` | 1:1 GT+/GT0 (lt65, our source) | none by default |
+| D `two_pos_per_null` | 2:1 GT+/GT0 fixed pos-bias | none |
+| E `natural` | none | none |
+| F `fixed_total_114` | total cap | none |
+| G `equalized_across_sza` | per-bin count | none |
+| H `custom` | per-bin ratio table | none |
+| I `two_to_one_adaptive` | 2:1 majority:minority | none |
+| **J `oversample_size_balanced`** | none | oversample-only, max 4x |
+| **K `two_pos_per_null_size_balanced`** | D | J |
+| **L `adaptive_size_balanced`** | I | J |
+
+J/K/L (added 2026-04-27) extend the size axis with oversample-only logic in `balance_training.rebalance_area_bins(oversample_only=True, max_oversample_ratio=4.0)`. No chip is dropped at the size step.
 
 ### Refactor Phase 4 (2026-04-23): experiment runner
-- `validate_experiment.py`: enforces single-controlled-variable rule via `controlled_variable:` declaration.
-- `run_experiment.py`: drives manifest -> train -> infer -> evaluate -> figures.
-- 14 experiment YAMLs under `configs/experiments/`: A0-A6, B0-B5, baseline_v1, ablation_no_aug.
+- `validate_experiment.py` enforces the single-controlled-variable rule via `controlled_variable:` declaration.
+- `run_experiment.py` drives manifest -> train -> infer -> evaluate -> figures.
+- 19 experiment YAMLs under `configs/experiments/` (see Experiment Inventory below).
 
 ### Refactor Phase 5 (2026-04-23): evaluation parity
-- `eval_methods.py` now emits per-chip `pred_area_m2`, `gt_area_m2`, `abs_area_err_m2`, `sq_area_err_m2`. Summary aggregates to `mae_area_m2`, `mse_area_m2`, `n_chips`, `n_skipped`. Skip policy configurable.
-- `eval_per_iceberg.py` rewritten with Hungarian matching on `1 - IoU` (default `iou_threshold = 0.3`); per-pair MAE on area and root length; per-pair IoU; relative error (RE, Fisser eq. 2). Detection stats CSV (`n_ref`, `n_pred`, `n_matched`, match rate, precision) for selection-bias disclosure.
+- `eval_methods.py`: per-chip pixel metrics + chip-level area MAE/MSE; aggregations by (method, sza_bin) including GT-positive-only and skip count. Configurable skip policy.
+- `eval_per_iceberg.py`: Hungarian matching on `1 - IoU` (default `iou_threshold = 0.3`); per-pair MAE on area and root length; per-pair IoU; relative error (RE, Fisser eq. 2). bbox-prefilter + area-derived union for speed. Detection stats CSV (`n_ref`, `n_pred`, `n_matched`, match rate, precision) for selection-bias disclosure.
 
-### Refactor Phase 6 (2026-04-24): figure registry
-- `_fig_registry.py`: `write(fig, slug, caption, out_dir)`. Saves to `<out_dir>/fig-archive/<YYYYMMDD_HHMMSS>__<slug>.png` (append-only) and updates `<out_dir>/figures.md` row for the slug.
-- `compare_model_eval.py` and `make_figure21_iou_gt_positive_comparison.py` migrated. Remaining migrations (compare_areas, eval_methods, descriptive_stats) deferred until paper rev cycle.
+### Refactor Phase 6 (2026-04-24, completed 2026-04-27): figure registry
+- `_fig_registry.py`: `write(fig, slug, caption, out_dir)` and `write_table(headers, rows, title, slug, caption, out_dir)`. Saves to `<out_dir>/fig-archive/<YYYYMMDD_HHMMSS>__<slug>.png` (append-only) and updates `<out_dir>/figures.md` row for the slug. Slug-format-enforced via regex.
+- All paper-bound figure scripts migrated: `compare_model_eval.py`, `make_figure21_iou_gt_positive_comparison.py`, `compare_areas.py`, `eval_methods.py`, `descriptive_stats.py`. Per-chip dumpers (visualize_*, predict.py, build_lt65_nulls QC PNGs) intentionally still call `fig.savefig` directly.
 
 ### Code Conversion to 2-Class
 All inference scripts run as `num_classes=1` (binary). Shadow class removed throughout.
 
 ---
 
-## Current Work
+## Experiment Inventory (19 experiments)
 
-### Job 56554 (baseline_v1 resume)
-Resume of the `baseline_v1` training run. Inference + evaluation against the trained checkpoint at `runs/exp_baseline_v1/20260424_185158/model/best_model.pth`. PD on the gpu partition.
+### Baseline + ablations
+| YAML | Purpose |
+|---|---|
+| `exp_baseline_v1` | No-op anchor. Drives the canonical baseline run (`runs/exp_baseline_v1/<ts>/`). |
+| `exp_ablation_no_aug` | baseline_v1 with `augmentation.enabled: false`. |
+| `exp_ablation_no_nulls` | baseline_v1 with `data.balancing_scheme: scheme_A_fisser_original` (drops GT0 training chips across all bins). |
 
-When complete, headline tables will land at:
-- `runs/exp_baseline_v1/20260424_185158/evaluation/eval_summary.csv` (chip-level IoU/MAE/MSE per method × SZA bin).
-- `runs/exp_baseline_v1/20260424_185158/per_iceberg/eval_per_iceberg_summary.csv` (per-pair MAE on area + root length, per-pair IoU per method × SZA bin).
-- `runs/exp_baseline_v1/20260424_185158/per_iceberg/eval_per_iceberg_detection.csv` (match rate per method).
+### Phase A (lt65-scoped dataset progression)
+| ID | Dataset | Aug | Class balance | Size balance | YAML |
+|---|---|---|---|---|---|
+| A0 | Fisser lt65, positive-only | off | drop-GT0 | none | `exp_A0_fisser_lt65_original` |
+| A1 | Fisser lt65 + nulls | off | 1:1 GT+/GT0 | undersample | `exp_A1_fisser_lt65_plus_nulls` |
+| A2 | Our lt65, positive-only | off | drop-GT0 | none | `exp_A2_our_lt65` |
+| A3 | Our lt65 + nulls | off | 1:1 GT+/GT0 | none | `exp_A3_our_lt65_plus_nulls` |
+| A4 | A3 + augmentations | on | 1:1 GT+/GT0 | none | `exp_A4_our_lt65_plus_nulls_aug` |
+| A5 | A4 + 2:1 fixed pos-bias | on | 2:1 fixed | none | `exp_A5_our_lt65_plus_nulls_aug_2pos` |
+| A6 | A4 + adaptive 2:1 | on | 2:1 adaptive | none | `exp_A6_our_lt65_plus_nulls_aug_adaptive` |
+| A7 | A4 + size oversample | on | 1:1 GT+/GT0 | oversample (4x cap) | `exp_A7_our_lt65_plus_nulls_aug_size` |
+| A8 | A5 + size oversample | on | 2:1 fixed | oversample (4x cap) | `exp_A8_our_lt65_plus_nulls_aug_2pos_size` |
+| A9 | A6 + size oversample | on | 2:1 adaptive | oversample (4x cap) | `exp_A9_our_lt65_plus_nulls_aug_adaptive_size` |
+
+A4-A9 form a 2x3 grid: {no class balance, fixed pos-bias, adaptive} crossed with {no size balance, oversample}.
+
+### Phase B (method sweep on baseline)
+All B experiments share the baseline_v1 trained checkpoint; one training run produces all six method outputs. Each B YAML pins `evaluation.focus_method` so reporting tables read the headline method off the row.
+
+| ID | Method focus | YAML |
+|---|---|---|
+| B0 | Fixed B08 threshold | `exp_B0_method_threshold` |
+| B1 | Per-chip Otsu on B08 | `exp_B1_method_otsu` |
+| B2 | UNet++ argmax | `exp_B2_method_unet` |
+| B3 | UNet++ + threshold on probs | `exp_B3_method_unet_threshold` |
+| B4 | UNet++ + Otsu on probs | `exp_B4_method_unet_otsu` |
+| B5 | UNet++ + DenseCRF | `exp_B5_method_unet_crf` |
 
 ---
 
-## Remaining Work
+## Baseline_v1 Trained Run
 
-### Phase A Materialisation
-A0-A6 each reference a manifest that does not yet exist (`fisser_lt65_original`, `fisser_lt65_plus_nulls`, `our_lt65`, `our_lt65_plus_nulls`). To run any A experiment, the corresponding manifest must be built first via `build_clean_dataset.py` with the appropriate balancing scheme.
+Job 56554 completed 2026-04-24 at `runs/exp_baseline_v1/20260424_185158/`.
 
-**Open scoping question** (raised but not resolved): every lt65 chip in v4_clean is Fisser-sourced. There is no Roboflow-annotated lt65 in the v4_clean training split, so "our lt65" as a separate chip source needs definition. Three possible interpretations:
-- (a) A2 / A3 are redundant with A0 / A1; drop them.
-- (b) "Our lt65" means same chips, our preprocessing.
-- (c) "Our lt65" is a separate iceberg-labeler chip set not yet integrated.
+### Training (`runs/.../model/training_config.json`)
+- best_val_iou = 0.323, test_iou = 0.314 (pixel-level), test_loss = 1.025
+- seed = 42, manifest_id = v4_clean, experiment_mode = true, reproducible = true
+- 100 epochs on 551 training chips. ~10 min total.
 
-Pending direction.
+### Per-pair MAE on root length, in metres (eval_per_iceberg, the Fisser-comparable headline)
 
-### Phase B Materialisation
-B0-B5 share the baseline_v1 checkpoint; one training run produces all six. Once 56554 succeeds, each of B0-B5 is a reporting filter on the same outputs.
+| Method | < 65 | 65-70 | 70-75 | > 75 |
+|---|---|---|---|---|
+| TR | 17.8 | 7.9 | 6.5 | 20.1 |
+| OT | 22.7 | 13.8 | 14.5 | 15.9 |
+| UNet | 10.5 | 11.5 | 13.9 | 15.6 |
+| UNet_TR | 14.2 | 15.5 | 18.6 | 19.6 |
+| UNet_OT | **8.0** | 12.0 | 13.9 | 15.3 |
+| UNet_CRF | 10.1 | **7.4** | **9.0** | **12.6** |
 
-### Phase 7 Cleanup (deferred)
-Retire `IDS2026/S2-iceberg-areas/` to `_archive/`. Delete `scripts/*.bak` and `scripts/__pycache__/` on HPC. Update `paper-writing/methods_draft.md` to reflect the new manifest + experiment system.
+UNet_CRF wins three of four bins. UNet_OT wins lt65. Threshold-only methods worsen with rising SZA.
 
-### Open Questions
-1. Phase A "our lt65" interpretation (above).
-2. **Missed icebergs (PR-5):** 1,756 missed candidates. Decide on re-annotation.
-3. **92 oversized annotations:** > 400,000 m$^2$. Likely multi-iceberg clumps. Review and possibly split in Roboflow.
-4. **CatBoost / dynamic thresholding:** deferred.
+### Per-pair IoU on matched pairs
+
+| Method | < 65 | 65-70 | 70-75 | > 75 |
+|---|---|---|---|---|
+| TR | 0.48 | 0.67 | 0.69 | 0.59 |
+| OT | 0.47 | 0.62 | 0.62 | 0.62 |
+| UNet | 0.70 | 0.67 | 0.64 | 0.65 |
+| UNet_TR | 0.66 | 0.64 | 0.60 | 0.61 |
+| UNet_OT | **0.73** | 0.67 | 0.64 | 0.64 |
+| UNet_CRF | 0.65 | **0.69** | 0.67 | 0.66 |
+
+### Detection stats (selection-bias disclosure)
+
+| Method | n_pred_total | n_matched | match_rate | precision |
+|---|---|---|---|---|
+| TR | 16,975 | 1,465 | 20.3% | 8.6% |
+| OT | 42,429 | 2,472 | 34.3% | 5.8% |
+| UNet | 10,878 | 3,927 | **54.5%** | 36.1% |
+| UNet_TR | 11,196 | 3,503 | 48.7% | 31.3% |
+| UNet_OT | 5,702 | 1,906 | 26.5% | 33.4% |
+| UNet_CRF | 13,031 | 4,163 | **57.8%** | 32.0% |
+
+### One known interpretation note
+Chip-level pixel IoU (`eval_summary.csv`) is 0.005-0.013 for every method. That happens because the chips are 94 % ocean by pixel; any false-positive pixel blows up the union and crashes the metric. The per-pair IoU table above is the meaningful one for method comparison. Mention this in the paper.
+
+---
+
+## Open Questions
+
+### Phase A "our lt65" scoping (high priority)
+v4_clean has zero Roboflow-annotated lt65 chips in the training split (every lt65 training chip is Fisser-sourced). A2/A3 as written currently swap nothing meaningful from A0/A1. Three interpretations are open:
+
+- (a) A2/A3 redundant with A0/A1; drop them. Phase A collapses to 8 rows.
+- (b) "Our lt65" means same chips, our preprocessing (40 m + IC filter applied; Fisser's wasn't). Weaker claim but valid.
+- (c) "Our lt65" is a separate iceberg-labeler chip set not yet integrated. Needs new manifest source first.
+
+User direction is required before A2-A9 can produce meaningful results.
+
+### Variant manifests (`fisser_lt65_original`, `fisser_lt65_plus_nulls`, `our_lt65`, `our_lt65_plus_nulls`)
+A0-A9 reference manifests that do not yet exist on disk. Each must be built via `build_clean_dataset.py` with the appropriate balancing scheme, OR via a new manifest-recipe layer. Not blocking Phase B.
+
+### Missed icebergs (PR-5)
+1,756 missed candidates. Decide whether to re-annotate.
+
+### Oversized annotations
+92 icebergs > 400,000 m$^2$. Likely multi-iceberg clumps from Otsu pre-annotation. Review and possibly split in Roboflow.
+
+### CatBoost / dynamic thresholding
+Listed in `new-plan.txt` as TBD. Deferred.
 
 ---
 
 ## Critical File Paths
 
-### Configuration
+### Configuration (`iceberg-rework/configs/`)
 | File | Purpose |
 |---|---|
-| `configs/baselines/baseline_v1.yaml` | Canonical baseline; every experiment inherits this. |
-| `configs/experiments/exp_*.yaml` | 14 experiments: Phase A (A0-A6), Phase B (B0-B5), baseline_v1, ablation_no_aug. |
-| `configs/balancing/scheme_*.yaml` | 9 balancing schemes (A through I). |
+| `baselines/baseline_v1.yaml` | Canonical baseline. Every experiment inherits this. |
+| `experiments/exp_*.yaml` | 19 experiments (see Experiment Inventory above). |
+| `balancing/scheme_*.yaml` | 12 balancing schemes (A through L). |
 
-### Data
+### Data (`iceberg-rework/data/`)
 | File | Purpose |
 |---|---|
-| `data/v4_clean/manifest.json` | Single dataset identity. chips_sha = `fc4b3b16334f2916...`. |
-| `data/v4_clean/train_validate_test/` | Materialised pkls for training (consumed by `train.py --data_dir data/v4_clean`). |
-| `data/v4_clean/split_log.csv` | Per-chip metadata: split, pkl_position, chip_stem, tif_path, sza_bin, source, n_icebergs, ic_aware, ic_masked, wind_ms, temp_c. |
-| `data/raw_chips/fisser/<chip_stem>.tif` | Synthetic GeoTIFFs for Fisser chips so evaluation finds them. |
-| `data/v4_test_pools/<bin>/{pos,null}/` | Test chip pools for 2:1 sampling at evaluation time. |
+| `v4_clean/manifest.json` | Single dataset identity. `chips_sha = fc4b3b16334f2916...`. |
+| `v4_clean/train_validate_test/` | Materialised pkls. |
+| `v4_clean/split_log.csv` | Per-chip metadata. |
+| `raw_chips/fisser/<chip_stem>.tif` | 330 synthetic GeoTIFFs for Fisser chips. |
+| `v4_test_pools/<bin>/{pos,null}/` | Per-bin test pools for 2:1 sampling. |
+| `v4_clean_lt65_balanced/` | Additive variant: 28 lt65 pos + 29 lt65 null. |
 
-### Reference
+### Reference (`iceberg-rework/reference/`)
 | File | Purpose |
 |---|---|
-| `reference/v4_test_pools.csv` | Test pool manifest (bin, gt_label, chip_stem, source, n_icebergs, ic_frac, tif_src, tif_pool). |
-| `reference/lt65_nulls_selected.csv` | 29 lt65 GT0 chips selected for the v4 lt65 test pool. |
-| `reference/b08_analysis_results_discussion.md` | IC / B08 analysis with results, discussion, methods. |
-| `reference/descriptive_stats_results_discussion.md` | Dataset characterisation. |
-| `reference/met_data.csv` | ERA5 wind + temperature per chip. |
-| `reference/fisser_provenance_audit.csv` | Fisser chip tif paths, dates, regions. |
+| `v4_test_pools.csv` | Test pool manifest. |
+| `lt65_nulls_selected.csv` | 29 lt65 GT0 chips picked for the v4 lt65 test pool. |
+| `b08_analysis_results_discussion.md` | IC + B08 narrative + tables. |
+| `descriptive_stats_results_discussion.md` | Dataset characterisation. |
+| `met_data.csv` | ERA5 wind + temperature per chip. |
+| `fisser_provenance_audit.csv` | Fisser chip tif paths, dates, regions. |
 
-### Scripts
+### Scripts (`iceberg-rework/scripts/`)
 | File | Purpose |
 |---|---|
-| `scripts/build_clean_dataset.py` | Build a clean manifest from Fisser pkls + Roboflow COCO + IC filter. |
-| `scripts/train.py` | UNet++ training with seed enforcement and training_config.json emission. |
-| `scripts/run_methods.sh` | Run all six methods for one manifest + checkpoint. |
-| `scripts/run_experiment.py` | Drive one experiment through manifest -> train -> infer -> evaluate -> figures. |
-| `scripts/validate_experiment.py` | Single-controlled-variable rule; refuses multi-family change without `controlled_variable:`. |
-| `scripts/eval_methods.py` | Chip-level IoU + MAE + MSE per method × SZA bin. |
-| `scripts/eval_per_iceberg.py` | Per-pair MAE + IoU (Hungarian matching). |
-| `scripts/_method_common.py` | Shared provenance helpers + skip-reason constants. |
-| `scripts/_fig_registry.py` | Append-only figure archive + figures.md index. |
+| `build_clean_dataset.py` | Build manifest from Fisser pkls + Roboflow COCO + IC filter. |
+| `train.py` | UNet++ training; seed required under ICEBERG_EXPERIMENT=1. |
+| `run_methods.sh` | Six methods on one manifest + checkpoint. Cross-manifest drift guard. |
+| `run_experiment.py` | Drive one experiment through all five stages. |
+| `validate_experiment.py` | Single-controlled-variable rule. |
+| `eval_methods.py` | Chip-level IoU + MAE + MSE; figure registry-routed. |
+| `eval_per_iceberg.py` | Per-pair MAE + IoU (Hungarian matching, bbox prefilter). |
+| `compare_areas.py` | Method comparison plots; figure registry-routed. |
+| `compare_model_eval.py` | Baseline-vs-variant heatmaps; figure registry-routed. |
+| `descriptive_stats.py` | Dataset characterisation figures + tables; figure registry-routed. |
+| `balance_training.py` | Stage-1 (class) and stage-2 (size) balancing. Oversample-only mode. |
+| `_method_common.py` | Shared provenance helpers + skip-reason constants. |
+| `_fig_registry.py` | `write` and `write_table`; append-only fig-archive + figures.md. |
 
-### Slurm
+### Slurm (`iceberg-rework/slurm/`)
 | File | Purpose |
 |---|---|
-| `slurm/_common.sh` | Sourced by every slurm script. Sets ROOT, PY, ICEBERG_EXPERIMENT=1. |
-| `slurm/baseline_v1.slurm` | Train + infer + evaluate baseline_v1 from scratch. |
-| `slurm/baseline_v1_resume.slurm` | Resume infer + evaluate against an existing trained checkpoint. RUN_TS configurable. |
+| `_common.sh` | Shared bash preamble (sourced by absolute path because slurm copies the script to /var/spool). |
+| `baseline_v1.slurm` | Train + infer + evaluate the canonical baseline from scratch. |
+| `baseline_v1_resume.slurm` | Resume infer + evaluate from an existing trained checkpoint. RUN_TS configurable. |
+| `exp.slurm` | Generic per-experiment runner. `EXP_ID=exp_<id> sbatch slurm/exp.slurm`. Optional STAGES env var. |
 
-### Documentation (all in `paper-writing/`)
+### Documentation (in `paper-writing/`)
 | File | Purpose |
 |---|---|
 | `plan.md` | This file. Project state. |
-| `methods_draft.md` | Methods-section draft for the paper. |
-| `model_progression.md` | Phase A / Phase B experimental progression. |
-| `iceberg-rework-README.md` | Project-level README with folder layout + tables. |
-| `refactor_plan.md` | Repository design + audit (12-section response to the original refactor brief). |
+| `methods_draft.md` | Methods-section draft. |
+| `model_progression.md` | Phase A 2x3 grid + Phase B method sweep. |
+| `iceberg-rework-README.md` | Project README with folder layout + tables. |
+| `refactor_plan.md` | 12-section repository design + audit. |
 | `reference/descriptive_stats_results_discussion.md` | Dataset stats narrative. |
 | `reference/b08_analysis_results_discussion.md` | IC / B08 analysis narrative. |
 
 ---
 
-## Verified Pipeline State (2026-04-24)
+## How to Submit Anything
 
-- Repository on github.com/llinkas11/iceberg-seg, commit `bf151dd`.
-- v4_clean manifest built; chips_sha = `fc4b3b16334f2916...`.
-- baseline_v1 trained: `runs/exp_baseline_v1/20260424_185158/model/best_model.pth` (104 MB, 100 epochs, val IoU recorded in training_config.json).
-- 14 experiment YAMLs validate; all 9 balancing schemes parse.
-- `_fig_registry` unit tests pass: append-only archiving, slug-prefix safety, regenerate-replaces-row behaviour.
+```bash
+# Baseline (canonical run from scratch)
+ssh moosehead 'cd /mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework && \
+  sbatch slurm/baseline_v1.slurm'
+
+# Resume baseline infer + evaluate from an existing trained checkpoint
+ssh moosehead 'cd /mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework && \
+  RUN_TS=20260424_185158 sbatch slurm/baseline_v1_resume.slurm'
+
+# Any experiment (A0-A9, B0-B5, ablations, baseline_v1)
+ssh moosehead 'cd /mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework && \
+  EXP_ID=exp_A7_our_lt65_plus_nulls_aug_size sbatch slurm/exp.slurm'
+
+# Partial pipeline (e.g. infer + evaluate only)
+ssh moosehead 'cd /mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework && \
+  EXP_ID=exp_A7_our_lt65_plus_nulls_aug_size STAGES=infer,evaluate sbatch slurm/exp.slurm'
+
+# Validate any experiment without running it
+python scripts/validate_experiment.py --exp <exp_id>
+
+# Tail logs
+ssh moosehead 'tail -f /mnt/research/.../iceberg-rework/logs/exp/ice_exp_<job_id>.out'
+```
+
+---
+
+## Verified Pipeline State (2026-04-27)
+
+- Repo on github.com/llinkas11/iceberg-seg, latest commit `7f8b100`.
+- v4_clean manifest built. chips_sha = `fc4b3b16334f2916...`.
+- baseline_v1 trained: `runs/exp_baseline_v1/20260424_185158/model/best_model.pth` (104 MB, 100 epochs, val IoU 0.323, test IoU 0.314 pixel-level).
+- All 19 experiment YAMLs validate locally and on HPC.
+- All 12 balancing scheme YAMLs parse.
+- `_fig_registry` exposes `write` and `write_table`. Every paper-bound figure script routes through it.
 - `eval_per_iceberg.compute_iou_matrix` verified on L-pair degenerate case (area-derived union matches naive full-mask OR to float precision).
-- skimage, scipy, PyYAML, pydensecrf2 installed in `~/.venvs/iceberg-unet312` and listed in `requirements.txt`.
+- `balance_training.rebalance_area_bins(oversample_only=True)` unit-tested: (5, 30, 60) input -> (60, 60, 60) without cap; -> (20, 60, 60) with cap=4x. No chip dropped.
+- Per-pair MAE + IoU + detection-stats tables exist for baseline_v1 at `runs/exp_baseline_v1/20260424_185158/per_iceberg/`.
+- Dependencies (scikit-image, scipy, PyYAML, pydensecrf2) installed in `~/.venvs/iceberg-unet312` and listed in `requirements.txt`.
+
+---
+
+## Handoff Checklist for Next Context Window
+
+1. Read this file (`plan.md`) end-to-end.
+2. Optional: skim `methods_draft.md` for paper prose state.
+3. Optional: skim `model_progression.md` for the experimental narrative + 2x3 grid logic.
+4. Read the latest `git log --oneline | head -30` to see most recent commits.
+5. Check job queue: `ssh moosehead 'squeue -u llinkas'`.
+6. Open questions to resolve with user before scaling experiments:
+   - Phase A "our lt65" scoping (a, b, or c above).
+   - Whether to materialise variant manifests (`fisser_lt65_original`, `our_lt65`, `our_lt65_plus_nulls`).
+   - Whether to start Phase B reporting on baseline_v1 results.
+7. The figure registry is the canonical place to add any new plot. Use `_fig_registry.write` for plots and `_fig_registry.write_table` for tables-as-PNGs.

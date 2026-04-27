@@ -2,7 +2,7 @@
 
 **Working tree:** `/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/`
 **Source code:** `https://github.com/llinkas11/iceberg-seg`
-**Last updated:** 2026-04-24
+**Last updated:** 2026-04-27
 
 For the project-level README with folder layout and methodology, see
 `paper-writing/iceberg-rework-README.md` (sibling tree under
@@ -58,19 +58,27 @@ evaluators in parallel.
 ## Run any other experiment
 
 ```
-python scripts/validate_experiment.py --exp <experiment_id>     # confirm
-python scripts/run_experiment.py    --exp <experiment_id>       # execute
+python scripts/validate_experiment.py --exp <experiment_id>           # confirm
+EXP_ID=<experiment_id> sbatch slurm/exp.slurm                         # execute via slurm
+python scripts/run_experiment.py --exp <experiment_id>                # execute interactively
 ```
 
-Available experiments under `configs/experiments/`:
+Available experiments under `configs/experiments/` (19 total):
 
-- `exp_baseline_v1`: no-op anchor, used for the headline baseline run.
-- `exp_A0_fisser_lt65_original` through `exp_A6_our_lt65_plus_nulls_aug_adaptive`: Phase A dataset progression (lt65-scoped).
-- `exp_B0_method_threshold` through `exp_B5_method_unet_crf`: Phase B method sweep on the Phase A winner.
+- `exp_baseline_v1`: no-op anchor; the headline baseline run.
+- `exp_A0` through `exp_A9`: Phase A dataset 2x3 grid (lt65-scoped).
+  - A0: Fisser lt65 reproduction. A1-A3: + nulls / source swap. A4: + aug.
+  - A5/A6: class balance (fixed pos / adaptive). A7: size balance only.
+  - A8/A9: combined class + size balance.
+- `exp_B0` through `exp_B5`: Phase B method sweep on the Phase A winner.
+  All six share the same trained checkpoint; one training run produces all
+  six method outputs.
 - `exp_ablation_no_aug`: baseline with augmentation disabled.
+- `exp_ablation_no_nulls`: baseline with GT0 training chips dropped
+  (scheme_A_fisser_original applied across all bins).
 
 See `paper-writing/model_progression.md` for the full progression and
-motivations row by row.
+motivations row by row, including the 2x3 grid design.
 
 ---
 
