@@ -10,7 +10,7 @@ inherits: baseline_v1
 
 change:
   data:
-    manifest_id:      fisser_lt65_original
+    manifest_id:      v4_raw_lt65
     balancing_scheme: scheme_A_fisser_original
   augmentation:
     enabled: false
@@ -23,12 +23,14 @@ progression:
   compared_to: null
 
 notes: |
-  Uses the fisser_lt65_original dataset recipe, which is Fisser's original
-  lt65 chips (no GT-zero injected, no our-lt65 chips merged). scheme_A drops
-  any GT0 the manifest might contain, matching Fisser's positive-only
-  training design.
+  Uses v4_raw_lt65: 398 lt65 Fisser chips with NO 40 m root-length filter and
+  NO IC-mask (faithful Fisser reproduction). scheme_A drops any GT0 chips,
+  matching Fisser's positive-only training design.
 
   The two-family change (data + augmentation) is the unavoidable cost of
   Fisser replication. controlled_variable: data says the *intent* of A0 is
   the dataset anchor; the aug flip is part of "what the reproduction entails"
   rather than a separately tuned knob.
+
+  A0 -> A2 isolates the preprocessing-pipeline variable: same Fisser chips,
+  with our 40 m + IC mask applied (v4_clean_lt65).

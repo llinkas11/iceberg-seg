@@ -8,7 +8,7 @@ inherits: baseline_v1
 
 change:
   data:
-    manifest_id:      our_lt65_plus_nulls
+    manifest_id:      v4_clean_lt65_plus_nulls
     balancing_scheme: scheme_C_our_lt65_plus_nulls
   augmentation:
     enabled: true       # pinned so flipping baseline's aug default can't silently move A4

@@ -50,6 +50,11 @@ QUALITY_CSV = os.path.join(LLINKAS, "reference/fisser_quality_filter.csv")
 MET_CSV = os.path.join(LLINKAS, "reference/met_data.csv")
 CHIPS_ROOT = os.path.join(SMISHRA, "chips")
 
+# Raw (pre-40m-filter) sources, used when --skip_size_filter is set.
+# These are the inputs that filter_small_icebergs.py reads from.
+RAW_COCO = os.path.join(SMISHRA, "data/roboflow_export/train/train/_annotations.coco.json")
+RAW_FISSER = os.path.join(SMISHRA, "data/fisser_original/train_validate_test")
+
 CHIP_SIZE = 256
 PIXEL_AREA_M2 = 100.0
 B08_THRESHOLD = 0.22   # Fisser's 0.12 + 0.10 DN offset (chip_sentinel2.py does not subtract offset)
@@ -95,7 +100,9 @@ def polygons_to_mask(segmentations, width=CHIP_SIZE, height=CHIP_SIZE):
     draw = ImageDraw.Draw(mask)
     for seg in segmentations:
         if isinstance(seg, list) and len(seg) >= 6:
-            coords = [(int(round(seg[i])), int(round(seg[i+1])))
+            # Coerce coords to float first: raw Roboflow exports occasionally
+            # mix string coords with ints in a single polygon (e.g. '170.07').
+            coords = [(int(round(float(seg[i]))), int(round(float(seg[i + 1]))))
                        for i in range(0, len(seg) - 1, 2)]
             draw.polygon(coords, fill=1)
     return np.array(mask, dtype=np.uint8)
@@ -241,10 +248,13 @@ def write_manifest(out_dir, manifest_id, args, chip_rows, chips_root):
         },
         "filters": {
             "shadow_merge":      True,
-            "root_length_min_m": 40,
-            "ic_threshold":      IC_THRESHOLD,
-            "ic_mask_scope":     "train_only",
+            "root_length_min_m": 0 if args.skip_size_filter else 40,
+            "ic_threshold":      None if args.skip_ic_mask else IC_THRESHOLD,
+            "ic_mask_scope":     "none" if args.skip_ic_mask else "train_only",
             "b08_threshold_ic":  B08_THRESHOLD,
+            "filter_sza_bin":    args.filter_sza_bin or "all",
+            "skip_size_filter":  args.skip_size_filter,
+            "skip_ic_mask":      args.skip_ic_mask,
         },
         "total_chips":     len(chip_rows),
         "counts_by_split": summarise_splits(chip_rows),
@@ -267,19 +277,43 @@ def main():
     parser.add_argument("--out_dir",     default=os.path.join(LLINKAS, "data/v4_clean"))
     parser.add_argument("--manifest_id", default="v4_clean",
                         help="Manifest id written into manifest.json; should match --out_dir basename")
-    parser.add_argument("--coco_json", default=FILTERED_COCO)
-    parser.add_argument("--fisser_dir", default=FISSER_FILTERED)
+    parser.add_argument("--coco_json", default=None,
+                        help="COCO annotations json. Defaults to filtered, or raw under --skip_size_filter.")
+    parser.add_argument("--fisser_dir", default=None,
+                        help="Fisser pkl dir. Defaults to filtered, or raw under --skip_size_filter.")
     parser.add_argument("--chips_root", default=CHIPS_ROOT)
     parser.add_argument("--quality_csv", default=QUALITY_CSV)
     parser.add_argument("--met_csv", default=MET_CSV)
+    parser.add_argument("--skip_size_filter", action="store_true",
+                        help="Use raw COCO + raw Fisser pkls. Disables the 40 m root-length cutoff.")
+    parser.add_argument("--skip_ic_mask", action="store_true",
+                        help="Disable both the Fisser IC chip-drop and the training-time IC pixel mask.")
+    parser.add_argument("--filter_sza_bin", default=None, choices=SZA_BINS,
+                        help="Restrict the dataset to a single SZA bin (e.g. sza_lt65).")
     args = parser.parse_args()
+
+    # 1. Resolve sources based on --skip_size_filter
+    if args.coco_json is None:
+        args.coco_json = RAW_COCO if args.skip_size_filter else FILTERED_COCO
+    if args.fisser_dir is None:
+        args.fisser_dir = RAW_FISSER if args.skip_size_filter else FISSER_FILTERED
+
+    print(f"COCO source : {args.coco_json}")
+    print(f"Fisser dir  : {args.fisser_dir}")
+    print(f"skip_size_filter = {args.skip_size_filter}")
+    print(f"skip_ic_mask     = {args.skip_ic_mask}")
+    print(f"filter_sza_bin   = {args.filter_sza_bin or 'all'}")
 
     rng = random.Random(args.seed)
 
-    # ── Load quality filter ──────────────────────────────────────────────
-    passing_fisser = load_quality_filter(args.quality_csv)
-    if passing_fisser is not None:
-        print(f"Fisser IC filter: {len(passing_fisser)} chips pass")
+    # 2. Load Fisser IC chip-drop list (skipped under --skip_ic_mask)
+    if args.skip_ic_mask:
+        passing_fisser = None
+        print("Fisser IC chip-drop: SKIPPED (--skip_ic_mask)")
+    else:
+        passing_fisser = load_quality_filter(args.quality_csv)
+        if passing_fisser is not None:
+            print(f"Fisser IC filter: {len(passing_fisser)} chips pass")
 
     met = load_met_data(args.met_csv)
 
@@ -317,6 +351,12 @@ def main():
             skipped += 1
             continue
 
+        # The SZA bin is encoded in the tif path; resolve it before any heavy
+        # work so --filter_sza_bin can short-circuit non-matching chips.
+        sza_bin = tif_to_sza_bin(tif_path, args.chips_root)
+        if args.filter_sza_bin and sza_bin != args.filter_sza_bin:
+            continue
+
         with rasterio.open(tif_path) as src:
             X = src.read().astype(np.float32)
 
@@ -330,7 +370,6 @@ def main():
         h = img_info.get("height", CHIP_SIZE)
         mask = polygons_to_mask(segs, w, h)
 
-        sza_bin = tif_to_sza_bin(tif_path, args.chips_root)
         chip_stem = f"{stem}_r{row:04d}_c{col:04d}"
 
         n_icebergs = 0
@@ -339,12 +378,17 @@ def main():
 
         met_rec = met.get(chip_stem, {})
 
-        # Annotation-aware IC: fraction of non-annotated pixels above B08 threshold
-        b08 = X[2]  # B08 band index
-        non_ann = (mask == 0)
-        non_ann_count = int(non_ann.sum())
-        bright_non_ann = int(((b08 >= B08_THRESHOLD) & non_ann).sum())
-        ic_aware = bright_non_ann / non_ann_count if non_ann_count > 0 else 0.0
+        # Annotation-aware IC: fraction of non-annotated pixels above B08 threshold.
+        # Only computed when the IC mask will actually consume it; skipping when
+        # --skip_ic_mask is set saves a boolean pass over every chip.
+        if args.skip_ic_mask:
+            ic_aware = 0.0
+        else:
+            b08 = X[2]
+            non_ann = (mask == 0)
+            non_ann_count = int(non_ann.sum())
+            bright_non_ann = int(((b08 >= B08_THRESHOLD) & non_ann).sum())
+            ic_aware = bright_non_ann / non_ann_count if non_ann_count > 0 else 0.0
 
         coco_chips.append({
             "X": X, "Y": mask, "sza_bin": sza_bin, "stem": stem,
@@ -358,71 +402,89 @@ def main():
     print(f"  Loaded {len(coco_chips)} Roboflow chips (skipped {skipped})")
 
     # ── Load Fisser chips (filtered masks) ───────────────────────────────
-    print("\nLoading Fisser chips (filtered masks)...")
+    # Every Fisser chip is sza_lt65 by construction. When --filter_sza_bin
+    # excludes lt65, the loader is a guaranteed no-op; short-circuit it.
     fisser_chips = []
-    splits = [
-        ("X_train.pkl", "Y_train.pkl"),
-        ("X_validation.pkl", "Y_validation.pkl"),
-        ("x_test.pkl", "y_test.pkl"),
-    ]
+    if args.filter_sza_bin and args.filter_sza_bin != "sza_lt65":
+        print(f"\nSkipping Fisser loader: --filter_sza_bin={args.filter_sza_bin} "
+              f"excludes all Fisser chips.")
+    else:
+        print("\nLoading Fisser chips (filtered masks)...")
+        splits = [
+            ("X_train.pkl", "Y_train.pkl"),
+            ("X_validation.pkl", "Y_validation.pkl"),
+            ("x_test.pkl", "y_test.pkl"),
+        ]
 
-    fisser_idx = 0
-    for x_file, y_file in splits:
-        xp = os.path.join(args.fisser_dir, x_file)
-        yp = os.path.join(args.fisser_dir, y_file)
-        if not os.path.exists(xp) or not os.path.exists(yp):
-            continue
-        with open(xp, "rb") as f:
-            X = np.array(pickle.load(f))
-        with open(yp, "rb") as f:
-            Y = np.array(pickle.load(f))
-        if Y.ndim == 4:
-            Y = Y[:, 0, :, :]
-        print(f"  {x_file}: {len(X)} chips")
-
-        for i in range(len(X)):
-            gidx = fisser_idx
-
-            # Apply IC quality filter
-            if passing_fisser is not None and gidx not in passing_fisser:
-                fisser_idx += 1
+        fisser_idx = 0
+        for x_file, y_file in splits:
+            xp = os.path.join(args.fisser_dir, x_file)
+            yp = os.path.join(args.fisser_dir, y_file)
+            if not os.path.exists(xp) or not os.path.exists(yp):
                 continue
+            with open(xp, "rb") as f:
+                X = np.array(pickle.load(f))
+            with open(yp, "rb") as f:
+                Y = np.array(pickle.load(f))
+            if Y.ndim == 4:
+                Y = Y[:, 0, :, :]
+            # Shadow merge: class 2 -> class 1. Idempotent: filtered fisser pkls
+            # already had this applied by filter_small_icebergs.py; raw pkls do not.
+            Y[Y == 2] = 1
+            print(f"  {x_file}: {len(X)} chips")
 
-            chip_stem = f"fisser_{gidx:04d}"
-            met_rec = met.get(chip_stem, {})
+            for i in range(len(X)):
+                gidx = fisser_idx
 
-            n_icebergs = 0
-            if (Y[i] == 1).sum() > 0:
-                _, n_icebergs = cc_label((Y[i] == 1).astype(np.int32))
+                # Apply IC quality filter
+                if passing_fisser is not None and gidx not in passing_fisser:
+                    fisser_idx += 1
+                    continue
 
-            # Annotation-aware IC
-            b08 = X[i][2]
-            ice_mask = (Y[i] == 1)
-            non_ann = ~ice_mask
-            non_ann_count = int(non_ann.sum())
-            bright_non_ann = int(((b08 >= B08_THRESHOLD) & non_ann).sum())
-            ic_aware = bright_non_ann / non_ann_count if non_ann_count > 0 else 0.0
+                chip_stem = f"fisser_{gidx:04d}"
+                met_rec = met.get(chip_stem, {})
 
-            # Write a synthetic GeoTIFF so eval_methods.py can rasterise polygons
-            # back to masks. Without this, the cached transform in the gt record
-            # is None and the chip is silently dropped from the evaluation.
-            tif_path = write_synthetic_fisser_tif(chip_stem, X[i])
+                n_icebergs = 0
+                if (Y[i] == 1).sum() > 0:
+                    _, n_icebergs = cc_label((Y[i] == 1).astype(np.int32))
 
-            fisser_chips.append({
-                "X": X[i], "Y": Y[i], "sza_bin": "sza_lt65",
-                "stem": f"fisser_{gidx:04d}", "chip_stem": chip_stem,
-                "tif_path": tif_path, "source": "fisser", "n_icebergs": n_icebergs,
-                "wind_ms": met_rec.get("wind_speed_10m", ""),
-                "temp_c": met_rec.get("temp_2m", ""),
-                "ic_aware": ic_aware,
-            })
-            fisser_idx += 1
+                # Annotation-aware IC, gated by --skip_ic_mask (see Roboflow branch).
+                if args.skip_ic_mask:
+                    ic_aware = 0.0
+                else:
+                    b08 = X[i][2]
+                    ice_mask = (Y[i] == 1)
+                    non_ann = ~ice_mask
+                    non_ann_count = int(non_ann.sum())
+                    bright_non_ann = int(((b08 >= B08_THRESHOLD) & non_ann).sum())
+                    ic_aware = bright_non_ann / non_ann_count if non_ann_count > 0 else 0.0
+
+                # Write a synthetic GeoTIFF so eval_methods.py can rasterise polygons
+                # back to masks. Without this, the cached transform in the gt record
+                # is None and the chip is silently dropped from the evaluation.
+                tif_path = write_synthetic_fisser_tif(chip_stem, X[i])
+
+                fisser_chips.append({
+                    "X": X[i], "Y": Y[i], "sza_bin": "sza_lt65",
+                    "stem": f"fisser_{gidx:04d}", "chip_stem": chip_stem,
+                    "tif_path": tif_path, "source": "fisser", "n_icebergs": n_icebergs,
+                    "wind_ms": met_rec.get("wind_speed_10m", ""),
+                    "temp_c": met_rec.get("temp_2m", ""),
+                    "ic_aware": ic_aware,
+                })
+                fisser_idx += 1
 
     print(f"  Loaded {len(fisser_chips)} Fisser chips (after IC filter)")
 
     # ── Merge all chips ──────────────────────────────────────────────────
     all_chips = coco_chips + fisser_chips
     print(f"\nTotal chips: {len(all_chips)}")
+
+    # 3. Optional SZA-bin filter (e.g. lt65-only Phase A subsets)
+    if args.filter_sza_bin:
+        before = len(all_chips)
+        all_chips = [c for c in all_chips if c["sza_bin"] == args.filter_sza_bin]
+        print(f"Filtered to sza_bin={args.filter_sza_bin}: {before} -> {len(all_chips)} chips")
 
     # ── Stratified split ─────────────────────────────────────────────────
     by_bin = defaultdict(list)
@@ -510,7 +572,10 @@ def main():
 
         return X.astype(np.float32), Y.astype(np.int64)
 
-    X_train, Y_train = pack(train_idx, apply_ic_mask=True)
+    apply_train_ic = not args.skip_ic_mask
+    if not apply_train_ic:
+        print("\nIC pixel mask: SKIPPED for all splits (--skip_ic_mask)")
+    X_train, Y_train = pack(train_idx, apply_ic_mask=apply_train_ic)
     X_val, Y_val = pack(list(val_idx), apply_ic_mask=False)
     X_test, Y_test = pack(list(test_idx), apply_ic_mask=False)
 
@@ -557,7 +622,11 @@ def main():
             for pos, idx in enumerate(indices):
                 c = all_chips[idx]
                 ic = c.get("ic_aware", 0)
-                ic_masked = (split_name == "train" and ic >= IC_THRESHOLD)
+                ic_masked = (
+                    not args.skip_ic_mask
+                    and split_name == "train"
+                    and ic >= IC_THRESHOLD
+                )
                 writer.writerow({
                     "split": split_name,
                     "pkl_position": pos,
