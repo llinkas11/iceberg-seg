@@ -1,0 +1,41 @@
+# scheme_K_two_pos_per_null_size_balanced: stage-1 fixed 2:1 GT+/GT0 +
+# stage-2 oversample-only size balancing.
+#
+# Composition of scheme_D (class) and scheme_J (size). Within each SZA bin:
+#   1. Resample to 2:1 GT+ : GT0 (fixed positive-majority direction).
+#   2. Within the resulting GT+ pool, oversample small/mid root-length bins
+#      up to the largest size bin, capped at 4x the original count.
+#
+# No chip is dropped at the size step. The class step still resamples to
+# achieve the target ratio.
+
+id: scheme_K_two_pos_per_null_size_balanced
+stage: train_only
+
+rules:
+  drop_gt_zero: false
+  class_balance:
+    kind:           ratio
+    gt_pos_to_gt_0: 2.0
+    direction:      fixed_positive_majority
+    bin:            all
+  size_balance:
+    kind:                   oversample_only
+    bins:                   [rl_40_100, rl_100_300, rl_300_plus]
+    target_per_bin:         max_present
+    max_oversample_ratio:   4.0
+
+implementation:
+  module: scripts/balance_training.py
+  entry:  main
+  args:
+    - --balance_positive_area_bins
+    - --oversample_only
+    - --max_oversample_ratio
+    - "4.0"
+
+notes: |
+  Pairs with A8 of the dataset progression. Tests whether a model trained
+  on a class-balanced and size-balanced training set lifts performance on
+  small icebergs without trading off the large-iceberg performance the
+  natural distribution already trains well.

@@ -35,14 +35,23 @@ from Fisser's recipe.
 | A4 | Our lt65 + nulls + augmentations on       | on  | scheme_C            | +hflip / vflip / rot90              | First step where we leave Fisser's recipe. Does synthetic rotation/flipping recover from our smaller absolute training volume?                             | exp_A4_our_lt65_plus_nulls_aug      |
 | A5 | A4 + 2:1 positive-biased balancing        | on  | scheme_D (2:1 fixed)| +class balance, fixed pos-majority  | Bias training loss toward the rarer positive signal. Tests "if we let the model see nulls but still emphasise positives, do we get the best of both?"      | exp_A5_our_lt65_plus_nulls_aug_2pos |
 | A6 | A4 + 2:1 adaptive balancing (fork from A4)| on  | scheme_I (adaptive) | +class balance, majority:minority   | Swap the direction: 2:1 whichever way the natural per-bin distribution leans. Tests "does deferring to the data's own class signal beat forced pos-bias?" | exp_A6_our_lt65_plus_nulls_aug_adapt|
+| A7 | A4 + size oversample                       | on  | scheme_J (size only)| +size balance via oversample (4x cap)| Replicate small / mid root-length bins up to the largest bin, never undersample. Tests the size axis on its own. With aug on, replicas get distinct geometric views per epoch. | exp_A7_our_lt65_plus_nulls_aug_size |
+| A8 | A5 + size oversample                       | on  | scheme_K (D + J)    | +size balance on top of fixed pos   | Class and size both balanced; class step uses fixed positive majority. Reads off the marginal lift of size balancing when class is already addressed.       | exp_A8_our_lt65_plus_nulls_aug_2pos_size |
+| A9 | A6 + size oversample                       | on  | scheme_L (I + J)    | +size balance on top of adaptive    | Class and size both balanced; class step uses adaptive direction. Closes the 2x3 grid: class in {none, fixed-pos, adaptive} crossed with size in {none, oversample}. | exp_A9_our_lt65_plus_nulls_aug_adaptive_size |
 
 Notes:
 
-- A5 and A6 are siblings. Both compare against A4, not against each other
-  first.
-- A2 vs A0 and A3 vs A1 form a 2x2: (source) x (nulls). The 2x2 is what
-  supports a causal statement like "nulls help regardless of source".
-- A4 is the natural "no-balancing" control for A5 and A6.
+- A5, A6, and A7 all compare against A4. A8 compares against A5; A9
+  compares against A6.
+- A2 vs A0 and A3 vs A1 form a 2x2: (source) x (nulls). A4 / A7 vs A5 / A8
+  vs A6 / A9 form a 2x3: (size balance: off, on) x (class balance: none,
+  fixed-pos, adaptive).
+- A4 is the natural "no-balancing" control for A5, A6, and A7.
+- Oversampling pairs with augmentation: replicated chips get different
+  random hflip / vflip / rot90 each pass, so the gradient sees more
+  distinct instances of the rare bin without seeing the underlying pixels
+  twice. The 4x cap on per-bin replication bounds memorisation risk on
+  very small bins.
 
 ---
 
@@ -124,5 +133,11 @@ scan without reading prose.
   2:1 pos-majority (A5).
 - `iceberg-rework/configs/balancing/scheme_I_two_to_one_adaptive.yaml`:
   adaptive 2:1 majority:minority (A6).
+- `iceberg-rework/configs/balancing/scheme_J_oversample_size_balanced.yaml`:
+  oversample-only size balancing, 4x cap (A7).
+- `iceberg-rework/configs/balancing/scheme_K_two_pos_per_null_size_balanced.yaml`:
+  D + J composition (A8).
+- `iceberg-rework/configs/balancing/scheme_L_adaptive_size_balanced.yaml`:
+  I + J composition (A9).
 - `iceberg-rework/scripts/eval_per_iceberg.py`: Hungarian matching + per-pair
   MAE + IoU + RE. All progression numbers flow through this one script.

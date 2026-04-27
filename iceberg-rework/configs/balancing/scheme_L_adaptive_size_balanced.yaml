@@ -1,0 +1,41 @@
+# scheme_L_adaptive_size_balanced: stage-1 adaptive 2:1 majority:minority +
+# stage-2 oversample-only size balancing.
+#
+# Composition of scheme_I (class, adaptive direction) and scheme_J (size,
+# oversample-only). Within each SZA bin:
+#   1. Resample to 2:1 majority : minority. Whichever class is the natural
+#      majority in that bin keeps the 2x slot.
+#   2. Within the resulting GT+ pool, oversample small/mid root-length
+#      bins up to the largest size bin, capped at 4x the original count.
+
+id: scheme_L_adaptive_size_balanced
+stage: train_only
+
+rules:
+  drop_gt_zero: false
+  class_balance:
+    kind:      ratio
+    ratio:     2.0
+    direction: adaptive_majority_minority
+    bin:       all
+  size_balance:
+    kind:                   oversample_only
+    bins:                   [rl_40_100, rl_100_300, rl_300_plus]
+    target_per_bin:         max_present
+    max_oversample_ratio:   4.0
+
+implementation:
+  module: scripts/balance_training.py
+  entry:  main
+  args:
+    - --balance_positive_area_bins
+    - --oversample_only
+    - --max_oversample_ratio
+    - "4.0"
+
+notes: |
+  Pairs with A9 of the dataset progression. Same trade as A6 -> A9 was vs
+  A4 -> A7: take the natural per-bin class majority and amplify it 2:1,
+  then size-balance within the positives. Useful when the natural
+  distribution is roughly even and a forced positive-majority is the
+  wrong call.
