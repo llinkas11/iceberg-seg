@@ -1,11 +1,19 @@
-# Iceberg Segmentation Pipeline Rework Plan
+# Iceberg Segmentation Pipeline: Project State
 
-**Status:** Steps 0-7 + 6b complete. All scripts converted to binary. eval_per_iceberg.py written. Ready for GPU training.
-**Last verified:** 2026-04-16. build_clean_dataset.py and balance_training.py rerun successfully after /simplify code review fixes.
+**Status:** Refactor complete (Phases 1-6). Configuration system, manifest schema, experiment runner, method runner, per-iceberg evaluator, and figure registry all in place. baseline_v1 trained successfully on `v4_clean`; method inference + evaluation re-running after dependency fix.
+**Last verified:** 2026-04-24.
+**Authoritative state:** this file. Methodology details: `methods_draft.md`. Experimental progression: `model_progression.md`. Repository design + audit: `refactor_plan.md`.
 
 ## Context
 
-Reworking smishra's Sentinel-2 iceberg segmentation pipeline to match Fisser 2025 standards and produce a defensible paper. All editable work in `llinkas/iceberg-rework/`, source data in `smishra/rework/` (read-only).
+Reworking smishra's Sentinel-2 iceberg segmentation pipeline to match Fisser 2025 standards and produce a defensible paper. All editable work in `/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/`, mirrored to `github.com/llinkas11/iceberg-seg`. Source chip data in `smishra/rework/` (read-only).
+
+The current work is structured by progression:
+
+- **Phase A** walks the *dataset*: A0 (Fisser lt65 reproduction) -> A6 (our lt65 + nulls + augmentations + adaptive balancing).
+- **Phase B** walks the *method*: B0 (fixed B08 threshold) -> B5 (UNet++ + DenseCRF), all six on the Phase A winner.
+
+See `model_progression.md` for the full table with motivations.
 
 ---
 
@@ -13,193 +21,242 @@ Reworking smishra's Sentinel-2 iceberg segmentation pipeline to match Fisser 202
 
 | ID | Issue | Resolution |
 |----|-------|------------|
-| PR-1 | CARRA vs ERA5 | ERA5 via Open-Meteo used. Wind max 8.4 m/s (all pass), 324 chips temp <= 0C (mostly sza_gt75, documented as confound not filtered) |
-| PR-2 | Fisser SAFE files | Not available in downloads. Fisser chips accepted as pre-filtered by Fisser et al. IC computed from tif B08 directly using annotation-aware method |
-| PR-3 | Root length definition | Per-individual-iceberg (connected component >= 16 px), not per-chip aggregate |
-| PR-4 | Validation set | 60/15/25 train/val/test adopted. Validation used for checkpoint selection, never masked |
-| PR-5 | Re-annotation | 1,756 missed candidates found across 129 chips. Decision pending review of viz/missed_icebergs/ |
-| PR-6 | CatBoost/dynamic threshold | Deferred. Dynamic IC threshold rejected because 15-25% of iceberg pixels fall below 0.22 at every SZA bin (see b08_analysis_results_discussion.md Section 3.6) |
-| PR-7 | Shadow class | **Merged into iceberg (class 2 -> 1).** Applied throughout all scripts and data. Model is binary segmentation (single class: iceberg). Shadow merge bridges fragmented icebergs, nearly doubling survivors after 40m filter |
+| PR-1 | CARRA vs ERA5 | ERA5 via Open-Meteo. Wind max 8.4 m s$^{-1}$ (all pass), 324 chips temp <= 0 C (mostly sza_gt75, documented as confound, not filtered). |
+| PR-2 | Fisser SAFE files | Not in downloads. Fisser chips accepted as pre-filtered by Fisser et al. IC computed from tif B08 directly using annotation-aware method. |
+| PR-3 | Root length definition | Per-individual-iceberg (connected component >= 16 px), not per-chip aggregate. |
+| PR-4 | Validation set | 65/15/25 train/val/test; effective split is 551/137/228 due to per-SZA-bin test caps (57 per bin). Validation used for checkpoint selection, never masked. |
+| PR-5 | Re-annotation | 1,756 missed candidates found across 129 chips. Decision pending review of viz/missed_icebergs/. |
+| PR-6 | CatBoost / dynamic threshold | Deferred. Dynamic IC threshold rejected because 15-25 % of iceberg pixels fall below 0.22 at every SZA bin (b08_analysis_results_discussion.md §3.6). |
+| PR-7 | Shadow class | Merged into iceberg (class 2 -> 1). Model is binary. Shadow merge bridges fragmented icebergs, nearly doubling survivors after 40 m filter. |
+| PR-8 | Fisser test chip evaluability | All Fisser pkl chips now have synthetic GeoTIFFs at `data/raw_chips/fisser/<chip_stem>.tif` (3-band float32, 10 m identity transform, no CRS). eval_methods + eval_per_iceberg now load Fisser test chips through the same code path as Roboflow chips. |
 
 ---
 
-## Key Methodological Decisions (with justification references)
+## Key Methodological Decisions
 
 ### 1. Shadow Merge
-Fisser class 2 (shadow) merged into class 1 (iceberg) before all analysis. Aligns Fisser 3-class with Roboflow annotations. Model is binary (single class: iceberg). Documented in `reference/descriptive_stats_results_discussion.md` Section 2.
+Fisser class 2 (shadow) merged into class 1 (iceberg) before all analysis. Model is binary. Documented in `reference/descriptive_stats_results_discussion.md` §2.
 
-### 2. 40m Root-Length Cutoff
-Individual icebergs (connected components) < 16 pixels (1,600 m2, 40m RL) removed. Matches Fisser 2025 dataset minimum. Most removed components are rasterization artifacts (median 3 pixels), not real icebergs. Documented in `reference/descriptive_stats_results_discussion.md` Section 2.
+### 2. 40 m Root-Length Cutoff
+Connected components < 16 pixels (1,600 m$^2$, 40 m root length) removed. Matches Fisser 2025. Most removed components are rasterisation artefacts (median 3 pixels). Documented in `reference/descriptive_stats_results_discussion.md` §2.
 
 ### 3. IC Filtering (Annotation-Aware)
-Adapts Fisser et al. (2024) IC method to chip level. IC = fraction of non-annotated pixels with B08 >= 0.22 (Fisser's 0.12 + DN offset). Training chips with IC >= 15% have bright non-annotated pixels masked to zero. Validation and test never masked. 193 training chips masked. Full justification in `reference/b08_analysis_results_discussion.md` Sections 3.1-3.6.
+IC = fraction of non-annotated pixels with B08 >= 0.22 (Fisser's 0.12 + 0.10 DN offset). Training chips with IC >= 15 % have bright non-annotated pixels masked to zero. Validation and test never masked. 193 training chips masked. Justification: `reference/b08_analysis_results_discussion.md` §3.1-3.6.
 
 ### 4. DN Offset
-All reflectances +0.10 high (processing baseline >= 4.0 adds 1000 DN, chip_sentinel2.py does DN*1e-4 without subtracting). Fisser's 0.12 = our 0.22. Documented in smishra's `project_radiometric_offset.md`.
+All reflectances +0.10 high (processing baseline >= 4.0 adds 1000 DN; chip_sentinel2.py does DN * 10$^{-4}$ without subtracting). Fisser's 0.12 = our 0.22. Documented in `project_radiometric_offset.md` (smishra).
 
 ### 5. Temperature Confound
-98.9% of sza_gt75 chips have temp <= 0C. Filtering would destroy the bin. Documented as confound, not filtered. Wind is not a confound (max 8.4 m/s, all below 15 m/s threshold). See `reference/descriptive_stats_results_discussion.md` Section 4.
+98.9 % of sza_gt75 chips have temp <= 0 C. Filtering would destroy the bin. Documented as confound, not filtered. Wind not a confound (max 8.4 m s$^{-1}$, all below 15 m s$^{-1}$). See `reference/descriptive_stats_results_discussion.md` §4.
+
+---
+
+## Pipeline Stages
+
+The refactored pipeline is now five named stages, all driven by `scripts/run_experiment.py`:
+
+```
+1. manifest    Build or verify the data manifest (chip list + split + chips_sha)
+2. train       UNet++ training under ICEBERG_EXPERIMENT=1 (seed required)
+3. infer       All six methods on the trained checkpoint, one manifest
+4. evaluate    Chip-level (eval_methods) + per-pair (eval_per_iceberg) metrics
+5. figures     Registry-archived plots
+```
+
+Every stage stamps `experiment_id`, `chips_sha`, `git_sha`, `seed`, and final metrics into provenance JSON next to its outputs.
 
 ---
 
 ## Completed Steps
 
-### Step 0: Fisser Provenance Audit ✓
-- Script: `audit_fisser_provenance.py`
-- Output: `reference/fisser_provenance_audit.csv`
-- Result: 398/398 tifs accessible, all dates parseable. 80 unique scenes, 0 matching SAFE zips in downloads.
+### Step 0: Fisser Provenance Audit (2026-04-15)
+`audit_fisser_provenance.py` -> `reference/fisser_provenance_audit.csv`. 398 / 398 tifs accessible, all dates parseable. 80 unique scenes, 0 matching SAFE zips in downloads.
 
-### Step 1: 40m Root-Length Filter + Shadow Merge ✓
-- Script: `filter_small_icebergs.py` (merges shadow before CC analysis, uses np.bincount)
-- Output: `data/annotations_filtered.coco.json`, `data/fisser_filtered/*.pkl`
-- Result: COCO 18,312 -> 7,947 annotations. Fisser 96,648 -> 39,534 components (shadow merge bridges fragments). Viz in `viz/filter_40m/`
+### Step 1: 40 m Root-Length Filter + Shadow Merge (2026-04-15)
+`filter_small_icebergs.py` -> `data/annotations_filtered.coco.json`, `data/fisser_filtered/*.pkl`. COCO 18,312 -> 7,947 annotations. Fisser 96,648 -> 39,534 components.
 
-### Step 2: IC Quality Filtering ✓
-- Script: `filter_quality.py` (annotation-aware chip-level, B08 >= 0.22)
-- Output: `reference/ic_filter_10km.csv`, analysis in `reference/b08_analysis_results_discussion.md`
-- Result: 356 of 984 chips fail IC >= 15%. Masking applied only to training chips in build_clean_dataset.py.
+### Step 2: IC Quality Filtering (2026-04-15)
+`filter_quality.py` -> `reference/ic_filter_10km.csv`. 356 of 984 chips fail IC >= 15 %. Masking applied only to training chips.
 
-### Step 3: Meteorological Data ✓
-- Script: `fetch_met_data.py`
-- Output: `reference/met_data.csv`
-- Result: 0 chips > 15 m/s wind. 324 chips temp <= 0C. No filtering applied.
+### Step 3: Meteorological Data (2026-04-15)
+`fetch_met_data.py` -> `reference/met_data.csv`. 0 chips > 15 m s$^{-1}$ wind. 324 chips temp <= 0 C.
 
-### Step 4: Missed Icebergs ✓
-- Script: `visualize_missed_icebergs.py`
-- Output: `viz/missed_icebergs/` (30 side-by-side images), `reference/missed_icebergs_summary.csv`
-- Result: 1,756 missed candidates across 129 annotated chips. Median RL 60.8m.
+### Step 4: Missed Icebergs (2026-04-15)
+`visualize_missed_icebergs.py` -> `viz/missed_icebergs/`, `reference/missed_icebergs_summary.csv`. 1,756 missed candidates across 129 chips. Median RL 60.8 m.
 
-### Step 5: Descriptive Statistics ✓
-- Script: `descriptive_stats.py`
-- Output: `viz/descriptive_stats/` (histograms + table PNGs), `reference/descriptive_stats.csv`
-- Analysis docs: `reference/descriptive_stats_results_discussion.md`, `reference/b08_analysis_results_discussion.md`
+### Step 5: Descriptive Statistics (2026-04-15)
+`descriptive_stats.py` -> `viz/descriptive_stats/` + `reference/descriptive_stats.csv` + `reference/descriptive_stats_results_discussion.md` + `reference/b08_analysis_results_discussion.md`.
 
-### Step 6: Clean Dataset Build ✓
-- Script: `build_clean_dataset.py` (includes annotation-aware IC masking for training chips)
-- Output: `data/v3_clean/` (551 train, 137 val, 228 test, binary masks)
-- Result: 916 chips. 193 training chips IC-masked (5.9M pixels zeroed, 1.4M iceberg pixels preserved). Test stratified 57 per SZA bin.
+### Step 6: Clean Dataset Build (2026-04-16, rebuilt as v4_clean 2026-04-24)
+`build_clean_dataset.py` -> `data/v4_clean/`. Replaces and supersedes the earlier `v3_clean` dir.
 
-### Step 7: Training Set Balancing ✓
-- Script: `balance_training.py`
-- Output: `data/v3_balanced/` (364 train, 137 val, 228 test)
-- Result: null and rl_100_300 undersampled. 2:1 max ratio. Iceberg pixels 7.0%.
+- 916 chips total, 65/15/25 nominal split (effective 551/137/228 due to per-bin test caps).
+- 193 training chips IC-masked (5.9 M pixels zeroed; 1.4 M iceberg pixels preserved).
+- Test stratified to 57 chips per SZA bin.
+- 330 Fisser chips now have synthetic GeoTIFFs at `data/raw_chips/fisser/`. tif_path is populated in every chip row of the manifest, so evaluation no longer silently drops Fisser chips.
+- `manifest.json` is the single dataset identity. `chips_sha` (sha256 over chip_stem + tif_sha + split tuples) is the single hash that must match across runs.
 
-### Code Conversion to 2-Class ✓
-Scripts updated to binary segmentation (num_classes=1):
-- `train.py` (line 192: `else 2`)
-- `predict_tifs.py` (line 56: `else 2`, shadow polygonization removed)
-- `predict.py` (line 100: `else 2`, shadow color removed)
-- `export_onnx.py` (line 22: `else 2`)
-- `visualize_predictions.py` (line 66: `classes=2`)
-- `export_roboflow.py` (shadow removed from CLASS_NAMES)
-- `export_manual_annotations_roboflow.py` (same)
-- `eval_methods.py` (comment updated)
-- `threshold_probs.py`, `otsu_probs.py`, `densecrf_tifs.py` (docstrings updated to 2-band probs)
-- `job.slurm` (DATA_DIR -> data/v3_balanced)
+### Step 7: Training-Set Variants and Balancing Schemes
+`balance_training.py` (rewritten 2026-04-23) consumes a clean dataset and applies a balancing scheme. Nine schemes are declared as YAML under `configs/balancing/`:
 
-### eval_per_iceberg.py Written ✓
-- Per-iceberg MAE, RERL, contrast via greedy connected-component IoU matching
-- Designed for binary from the start
-- Cannot run until model is retrained and predictions generated
+| Scheme | Rule |
+|---|---|
+| A `fisser_original` | Drop GT0 training chips. |
+| B `fisser_plus_nulls` | Keep Fisser positives; inject GT0 chips at 1:1, lt65 only. |
+| C `our_lt65_plus_nulls` | As B but on our chip source. |
+| D `two_pos_per_null` | 2:1 GT+ : GT0 fixed pos-bias, all bins. |
+| E `natural` | No resampling. Explicit no-op for A/B partner runs. |
+| F `fixed_total_114` | Cap total to 114 chips, stratified by SZA + class. |
+| G `equalized_across_sza` | Equal per-SZA-bin count. |
+| H `custom` | Per-bin ratio table in YAML. |
+| I `two_to_one_adaptive` | 2:1 majority : minority, direction picked from natural per-bin distribution. |
 
----
+Strategy classes are deferred until the first scheme that has no existing implementation needs to run; A through D are covered by `balance_training.py` today.
 
-## Remaining Steps
+### Step 7c: Per-Bin Test Pools (2026-04-23)
+`build_v4_test_pools.py` -> `data/v4_test_pools/<bin>/{pos,null}/<chip_stem>.tif`. Manifest at `reference/v4_test_pools.csv`. Test chips pass through raw (no IC mask, no balancing). Used for cross-bin metric comparison at evaluation time.
 
-### Step 8: Retrain UNet++ (binary)
-**Status: READY TO RUN. Requires GPU.**
+- Bin counts: lt65 56 pos / 29 null; sza_65_70 21 / 36; sza_70_75 20 / 37; sza_gt75 23 / 34.
+- 2:1 sampling cap per bin: lt65 56/28, sza_65_70 21/10, sza_70_75 20/10, sza_gt75 23/11. Cross-bin equalised cap is 20 pos / 10 null (bottlenecked by sza_70_75).
 
-```bash
-# From moosehead SSH session:
-cd /mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework
-sbatch job.slurm
-```
+### Step 7b: lt65 Null Chips (2026-04-23)
+`build_lt65_nulls.py`. 4,444 lt65 chips scanned; 278 accepted; 29 selected (6 KQ + 23 SK), ranked by ascending B08 p95 and descending dark-pixel fraction. Stratified to match the Fisser GT-positive regional distribution (19.5 % KQ / 80.5 % SK). Manifest at `reference/lt65_nulls_selected.csv`. QC contact sheet at `viz/lt65_nulls_qc/contact_sheet.png`.
 
-Or interactively:
-```bash
-python scripts/train.py --mode s2 \
-    --data_dir data/v3_balanced \
-    --out_dir model/v3_balanced_aug \
-    --encoder resnet34 --epochs 100 --batch_size 16 --lr 1e-4
-```
+### Refactor Phase 1 (2026-04-23): provenance + seed + Fisser tifs
+- `_method_common.py`: shared `write_method_config`, `write_skipped_chips`, `load_manifest`, `get_git_sha`, `sha256_of_*`, `SKIP_*` constants. Single source of truth for method-output provenance.
+- `train.py`: refuses to run without `--seed` under `ICEBERG_EXPERIMENT=1`. Writes `training_config.json` next to `best_model.pth` (args, seed, manifest_id, git_sha, final metrics, experiment_mode flag).
+- `build_clean_dataset.py`: emits `manifest.json` with `chips_sha`. Synthesises GeoTIFFs for Fisser chips. Defaults to 65/15/25.
 
-- Augmentation: hflip + vflip + rot (on by default, --no_augment to disable)
-- Output: `model/v3_balanced_aug/best_model.pth`, `training_log.csv`
-- Expected: training on 364 chips, binary (BCE + DiceLoss, sigmoid), ~100 epochs
+### Refactor Phase 2 (2026-04-23): unified runner
+- `run_methods.sh`: takes `--manifest <path>` and `--checkpoint <path>`. Refuses if the checkpoint's `training_config.json.manifest_id` does not match (cross-manifest drift guard).
+- `prepare_test_chips_dir.py`: reads `--manifest` directly to populate per-bin test chip dirs.
 
-### Step 9: Run Inference (All 6 Methods)
-**Status: BLOCKED on Step 8.**
+### Refactor Phase 3 (2026-04-23): balancing schemes
+Nine YAMLs landed under `configs/balancing/`. Strategy class layer deferred.
 
-1. Build new test_chips dir from v3 test set:
-   ```bash
-   python scripts/prepare_test_chips_dir.py  # may need path updates for v3 split_log
-   ```
+### Refactor Phase 4 (2026-04-23): experiment runner
+- `validate_experiment.py`: enforces single-controlled-variable rule via `controlled_variable:` declaration.
+- `run_experiment.py`: drives manifest -> train -> infer -> evaluate -> figures.
+- 14 experiment YAMLs under `configs/experiments/`: A0-A6, B0-B5, baseline_v1, ablation_no_aug.
 
-2. Run all methods per SZA bin:
-   ```bash
-   bash scripts/run_all_methods.sh sza_lt65 model/v3_balanced_aug/best_model.pth
-   bash scripts/run_all_methods.sh sza_65_70 model/v3_balanced_aug/best_model.pth
-   bash scripts/run_all_methods.sh sza_70_75 model/v3_balanced_aug/best_model.pth
-   bash scripts/run_all_methods.sh sza_gt75 model/v3_balanced_aug/best_model.pth
-   ```
+### Refactor Phase 5 (2026-04-23): evaluation parity
+- `eval_methods.py` now emits per-chip `pred_area_m2`, `gt_area_m2`, `abs_area_err_m2`, `sq_area_err_m2`. Summary aggregates to `mae_area_m2`, `mse_area_m2`, `n_chips`, `n_skipped`. Skip policy configurable.
+- `eval_per_iceberg.py` rewritten with Hungarian matching on `1 - IoU` (default `iou_threshold = 0.3`); per-pair MAE on area and root length; per-pair IoU; relative error (RE, Fisser eq. 2). Detection stats CSV (`n_ref`, `n_pred`, `n_matched`, match rate, precision) for selection-bias disclosure.
 
-3. Evaluate:
-   ```bash
-   python scripts/eval_methods.py \
-       --test_pkl data/v3_clean/train_validate_test/y_test.pkl \
-       --test_index data/v3_clean/split_log.csv \
-       --results_dir results/v3/area_comparison/test \
-       --out_dir results/v3/test_outputs
-   ```
+### Refactor Phase 6 (2026-04-24): figure registry
+- `_fig_registry.py`: `write(fig, slug, caption, out_dir)`. Saves to `<out_dir>/fig-archive/<YYYYMMDD_HHMMSS>__<slug>.png` (append-only) and updates `<out_dir>/figures.md` row for the slug.
+- `compare_model_eval.py` and `make_figure21_iou_gt_positive_comparison.py` migrated. Remaining migrations (compare_areas, eval_methods, descriptive_stats) deferred until paper rev cycle.
 
-**Note:** `run_all_methods.sh` currently points CHIPS and OUT_BASE to smishra's directories. These paths must be updated for v3 test chips before running.
-
-### Step 10: Per-Iceberg Evaluation
-**Status: SCRIPT WRITTEN. BLOCKED on Step 9.**
-
-```bash
-python scripts/eval_per_iceberg.py \
-    --pred_dir results/v3/area_comparison/test/{sza_bin}/UNet \
-    --test_pkl data/v3_clean/train_validate_test/y_test.pkl \
-    --test_x_pkl data/v3_clean/train_validate_test/x_test.pkl \
-    --test_index data/v3_clean/split_log.csv \
-    --out_dir results/v3
-```
-
-Metrics: MAE (area), RERL (root length), contrast (B08 iceberg - ocean), per-iceberg IoU.
+### Code Conversion to 2-Class
+All inference scripts run as `num_classes=1` (binary). Shadow class removed throughout.
 
 ---
 
-## Open Questions (for advisor/team)
+## Current Work
 
-1. **Missed icebergs (PR-5):** 1,756 missed candidates found. Review `viz/missed_icebergs/` to decide if re-annotation is needed.
-2. **92 oversized annotations:** Icebergs > 400,000 m2 (exceeding Fisser max). Likely multi-iceberg clumps from Otsu pre-annotation. Review and potentially split in Roboflow.
-3. **CatBoost / dynamic thresholding:** Listed in new-plan.txt as TBD. Deferred for now.
+### Job 56554 (baseline_v1 resume)
+Resume of the `baseline_v1` training run. Inference + evaluation against the trained checkpoint at `runs/exp_baseline_v1/20260424_185158/model/best_model.pth`. PD on the gpu partition.
+
+When complete, headline tables will land at:
+- `runs/exp_baseline_v1/20260424_185158/evaluation/eval_summary.csv` (chip-level IoU/MAE/MSE per method × SZA bin).
+- `runs/exp_baseline_v1/20260424_185158/per_iceberg/eval_per_iceberg_summary.csv` (per-pair MAE on area + root length, per-pair IoU per method × SZA bin).
+- `runs/exp_baseline_v1/20260424_185158/per_iceberg/eval_per_iceberg_detection.csv` (match rate per method).
+
+---
+
+## Remaining Work
+
+### Phase A Materialisation
+A0-A6 each reference a manifest that does not yet exist (`fisser_lt65_original`, `fisser_lt65_plus_nulls`, `our_lt65`, `our_lt65_plus_nulls`). To run any A experiment, the corresponding manifest must be built first via `build_clean_dataset.py` with the appropriate balancing scheme.
+
+**Open scoping question** (raised but not resolved): every lt65 chip in v4_clean is Fisser-sourced. There is no Roboflow-annotated lt65 in the v4_clean training split, so "our lt65" as a separate chip source needs definition. Three possible interpretations:
+- (a) A2 / A3 are redundant with A0 / A1; drop them.
+- (b) "Our lt65" means same chips, our preprocessing.
+- (c) "Our lt65" is a separate iceberg-labeler chip set not yet integrated.
+
+Pending direction.
+
+### Phase B Materialisation
+B0-B5 share the baseline_v1 checkpoint; one training run produces all six. Once 56554 succeeds, each of B0-B5 is a reporting filter on the same outputs.
+
+### Phase 7 Cleanup (deferred)
+Retire `IDS2026/S2-iceberg-areas/` to `_archive/`. Delete `scripts/*.bak` and `scripts/__pycache__/` on HPC. Update `paper-writing/methods_draft.md` to reflect the new manifest + experiment system.
+
+### Open Questions
+1. Phase A "our lt65" interpretation (above).
+2. **Missed icebergs (PR-5):** 1,756 missed candidates. Decide on re-annotation.
+3. **92 oversized annotations:** > 400,000 m$^2$. Likely multi-iceberg clumps. Review and possibly split in Roboflow.
+4. **CatBoost / dynamic thresholding:** deferred.
 
 ---
 
 ## Critical File Paths
 
+### Configuration
 | File | Purpose |
-|------|---------|
-| `data/v3_balanced/train_validate_test/` | **Training data** (364 train, 137 val, 228 test, binary masks, IC-masked training) |
-| `data/v3_clean/split_log.csv` | Definitive chip-to-split mapping with ic_aware, ic_masked, met data |
-| `reference/b08_analysis_results_discussion.md` | IC/B08 analysis: results, discussion, exhaustive methods |
-| `reference/descriptive_stats_results_discussion.md` | Dataset characterization: size, temporal, meteorological |
-| `reference/met_data.csv` | ERA5 wind + temperature per chip |
-| `reference/fisser_provenance_audit.csv` | Fisser chip tif paths, dates, regions |
-| `viz/descriptive_stats/` | All histogram and table figures |
-| `viz/missed_icebergs/` | Side-by-side missed iceberg visualizations |
-| `viz/filter_40m/` | Before/after 40m cutoff visualizations |
-| `job.slurm` | SLURM job template (DATA_DIR = data/v3_balanced) |
+|---|---|
+| `configs/baselines/baseline_v1.yaml` | Canonical baseline; every experiment inherits this. |
+| `configs/experiments/exp_*.yaml` | 14 experiments: Phase A (A0-A6), Phase B (B0-B5), baseline_v1, ablation_no_aug. |
+| `configs/balancing/scheme_*.yaml` | 9 balancing schemes (A through I). |
+
+### Data
+| File | Purpose |
+|---|---|
+| `data/v4_clean/manifest.json` | Single dataset identity. chips_sha = `fc4b3b16334f2916...`. |
+| `data/v4_clean/train_validate_test/` | Materialised pkls for training (consumed by `train.py --data_dir data/v4_clean`). |
+| `data/v4_clean/split_log.csv` | Per-chip metadata: split, pkl_position, chip_stem, tif_path, sza_bin, source, n_icebergs, ic_aware, ic_masked, wind_ms, temp_c. |
+| `data/raw_chips/fisser/<chip_stem>.tif` | Synthetic GeoTIFFs for Fisser chips so evaluation finds them. |
+| `data/v4_test_pools/<bin>/{pos,null}/` | Test chip pools for 2:1 sampling at evaluation time. |
+
+### Reference
+| File | Purpose |
+|---|---|
+| `reference/v4_test_pools.csv` | Test pool manifest (bin, gt_label, chip_stem, source, n_icebergs, ic_frac, tif_src, tif_pool). |
+| `reference/lt65_nulls_selected.csv` | 29 lt65 GT0 chips selected for the v4 lt65 test pool. |
+| `reference/b08_analysis_results_discussion.md` | IC / B08 analysis with results, discussion, methods. |
+| `reference/descriptive_stats_results_discussion.md` | Dataset characterisation. |
+| `reference/met_data.csv` | ERA5 wind + temperature per chip. |
+| `reference/fisser_provenance_audit.csv` | Fisser chip tif paths, dates, regions. |
+
+### Scripts
+| File | Purpose |
+|---|---|
+| `scripts/build_clean_dataset.py` | Build a clean manifest from Fisser pkls + Roboflow COCO + IC filter. |
+| `scripts/train.py` | UNet++ training with seed enforcement and training_config.json emission. |
+| `scripts/run_methods.sh` | Run all six methods for one manifest + checkpoint. |
+| `scripts/run_experiment.py` | Drive one experiment through manifest -> train -> infer -> evaluate -> figures. |
+| `scripts/validate_experiment.py` | Single-controlled-variable rule; refuses multi-family change without `controlled_variable:`. |
+| `scripts/eval_methods.py` | Chip-level IoU + MAE + MSE per method × SZA bin. |
+| `scripts/eval_per_iceberg.py` | Per-pair MAE + IoU (Hungarian matching). |
+| `scripts/_method_common.py` | Shared provenance helpers + skip-reason constants. |
+| `scripts/_fig_registry.py` | Append-only figure archive + figures.md index. |
+
+### Slurm
+| File | Purpose |
+|---|---|
+| `slurm/_common.sh` | Sourced by every slurm script. Sets ROOT, PY, ICEBERG_EXPERIMENT=1. |
+| `slurm/baseline_v1.slurm` | Train + infer + evaluate baseline_v1 from scratch. |
+| `slurm/baseline_v1_resume.slurm` | Resume infer + evaluate against an existing trained checkpoint. RUN_TS configurable. |
+
+### Documentation (all in `paper-writing/`)
+| File | Purpose |
+|---|---|
+| `plan.md` | This file. Project state. |
+| `methods_draft.md` | Methods-section draft for the paper. |
+| `model_progression.md` | Phase A / Phase B experimental progression. |
+| `iceberg-rework-README.md` | Project-level README with folder layout + tables. |
+| `refactor_plan.md` | Repository design + audit (12-section response to the original refactor brief). |
+| `reference/descriptive_stats_results_discussion.md` | Dataset stats narrative. |
+| `reference/b08_analysis_results_discussion.md` | IC / B08 analysis narrative. |
 
 ---
 
-## Verified Pipeline State (2026-04-16)
+## Verified Pipeline State (2026-04-24)
 
-- `build_clean_dataset.py` runs cleanly: 916 chips, 193 training IC-masked, val/test untouched
-- `balance_training.py` runs cleanly: 364 balanced training chips
-- Data verified: unique classes {0, 1} only, no class 2
-- UNet++ binary model initializes: 26,078,609 parameters (1 output channel)
-- Split log has all columns: split, pkl_position, stem, chip_stem, tif_path, sza_bin, source, n_icebergs, ic_aware, ic_masked, wind_ms, temp_c
-- IC masking confirmed: 193 training chips masked, 0 val, 0 test
+- Repository on github.com/llinkas11/iceberg-seg, commit `bf151dd`.
+- v4_clean manifest built; chips_sha = `fc4b3b16334f2916...`.
+- baseline_v1 trained: `runs/exp_baseline_v1/20260424_185158/model/best_model.pth` (104 MB, 100 epochs, val IoU recorded in training_config.json).
+- 14 experiment YAMLs validate; all 9 balancing schemes parse.
+- `_fig_registry` unit tests pass: append-only archiving, slug-prefix safety, regenerate-replaces-row behaviour.
+- `eval_per_iceberg.compute_iou_matrix` verified on L-pair degenerate case (area-derived union matches naive full-mask OR to float precision).
+- skimage, scipy, PyYAML, pydensecrf2 installed in `~/.venvs/iceberg-unet312` and listed in `requirements.txt`.

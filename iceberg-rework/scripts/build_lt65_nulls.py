@@ -70,6 +70,13 @@ REGIONS           = ("KQ", "SK")
 
 PROVENANCE_CSV    = "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/reference/fisser_provenance_audit.csv"
 
+OUR_LT65_NULL_SOURCE = "our_lt65_null"
+
+
+def null_stem(region, base_stem, row, col):
+    """Canonical split_log `stem` for a generated lt65 null chip."""
+    return f"lt65null_{region}_{base_stem}_r{int(row):04d}_c{int(col):04d}"
+
 
 # 2. Zip index (built once, scanned 4k+ times)
 def build_zip_index(downloads_dir):
@@ -298,9 +305,9 @@ def build_v4_split(v3_dir, v4_dir, selected_df, seed=SEED):
         chip_stem = f"{r.stem}_r{int(r.row):04d}_c{int(r.col):04d}"
         null_rows.append({
             "split": "test", "pkl_position": -1,
-            "stem": f"lt65null_{r.region}_{chip_stem}",
+            "stem": null_stem(r.region, r.stem, r.row, r.col),
             "chip_stem": chip_stem, "tif_path": r.tif_path,
-            "sza_bin": SZA_LT65, "source": "our_lt65_null",
+            "sza_bin": SZA_LT65, "source": OUR_LT65_NULL_SOURCE,
             "n_icebergs": 0, "ic_aware": r.ic_frac, "ic_masked": False,
             "wind_ms": "", "temp_c": "",
         })
