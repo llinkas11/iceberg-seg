@@ -139,7 +139,7 @@ No ground-truth iceberg area measurements independent of photointerpretation are
 
 ## 2.13 Experimental Design and Reproducibility
 
-Experiments follow a controlled progression. Phase A walks the dataset axis as a 2x3 grid: A0 (Fisser lt65 reproduction) anchors the chain; A4 sits at the centre (our lt65 + nulls + augmentations); A5/A6 vary class balancing direction (fixed positive majority, adaptive majority-minority); A7/A8/A9 add oversample-only size balancing on top of each class-balancing setting. Phase B walks the method axis on the Phase A winner: B0 (fixed B08 threshold) -> B5 (UNet++ + DenseCRF). Each row changes exactly one controlled variable from the row before it; multi-family changes (Fisser reproduction changing both the chip source and the augmentation flag) are explicit via a `controlled_variable:` declaration in the experiment YAML.
+Experiments follow a controlled progression. Phase A walks the dataset axis on lt65-only chips, with four controlled variables in order: (1) preprocessing pipeline (Fisser cleaning vs ours), (2) null-chip injection, (3) augmentation, (4) class and size balancing (a 2x3 grid across A4-A9). A0 anchors on `v4_raw_lt65` (the same Fisser lt65 chips with no 40 m component filter and no IC mask, faithful to Fisser's published recipe); A2 anchors on `v4_clean_lt65` (the 330 chips that pass our IC chip-drop, with 40 m and IC mask applied). The A0 to A2 contrast isolates the preprocessing pipeline as a single controlled variable. A3 to A9 inherit `v4_clean_lt65_plus_nulls` and vary one balancing axis at a time. Phase B walks the method axis on the Phase A winner: B0 (fixed B08 threshold) -> B5 (UNet++ + DenseCRF). Each row changes exactly one controlled variable from the row before it; multi-family changes (Fisser reproduction changing both the chip source and the augmentation flag) are explicit via a `controlled_variable:` declaration in the experiment YAML.
 
 The configuration system has four layers:
 
@@ -170,7 +170,13 @@ Oversample-only pairs deliberately with augmentation. A replicated chip is shown
 
 scheme_J implements size balancing alone (no class change). schemes K and L compose stage-1 (D or I) with stage-2 (J) so the dataset progression can isolate each axis.
 
-### 2.13.3 Phase A 2x3 grid
+### 2.13.3 Preprocessing-pipeline isolation (A0 vs A2) and the v4_raw companion
+
+Two preprocessing operations distinguish our pipeline from Fisser's published recipe: a 40 m root-length filter applied to connected components within each chip's mask, and an annotation-aware IC pixel mask that zeros bright non-annotated pixels in training chips with IC >= 15 % of non-annotated area. Auditing the lt65 split of `v4_clean` against the raw Fisser pkls quantifies the footprint of each operation. The 40 m filter removes 41,644 of 70,818 mask components on Fisser lt65 chips (58.8 %), and 312 of 330 chips have at least one component dropped. The IC pixel mask zeros pixels in 129 of 226 training Fisser lt65 chips (57.1 %). Two chips become effectively negative after the 40 m filter; no chip is removed from the manifest by either step.
+
+Because both operations substantially edit Fisser's data, the experimental design treats preprocessing as a controlled variable rather than a fixed setting. A0 and A1 anchor on `v4_raw_lt65` (398 lt65 Fisser chips, no filter, no mask, no IC chip-drop), preserving Fisser's published cleaning. A2 through A9 anchor on `v4_clean_lt65` (330 chips with our 40 m + IC pipeline applied). The A0 to A2 contrast isolates the preprocessing pipeline. To support a robustness check across all SZA bins, a parallel `v4_raw` manifest (984 chips, no filters, all bins) backs a companion baseline run that reports the same per-pair MAE / IoU / detection tables as `v4_clean`. The paper presents both tables; the delta is read directly as the preprocessing-pipeline impact.
+
+### 2.13.4 Phase A 2x3 grid
 
 A4-A9 form a 2x3 grid:
 
@@ -182,7 +188,7 @@ A4-A9 form a 2x3 grid:
 
 Each row reads "same as the column-1 cell, but with size oversampling added." The grid lets the paper read off the marginal lift of each balancing axis when the other axis is held fixed. Pairs to look at are A4-A5-A6 (class on a fixed dataset), A4-A7 (size on natural class distribution), A5-A8, A6-A9 (size on top of class).
 
-### 2.13.4 Reporting metrics on the run
+### 2.13.5 Reporting metrics on the run
 
 Every experiment run produces three CSV families:
 
@@ -191,3 +197,5 @@ Every experiment run produces three CSV families:
 - `per_iceberg/eval_per_iceberg_detection.csv`: per-method `n_ref`, `n_pred`, `n_matched`, match rate, precision. Selection-bias disclosure for cross-method MAE comparison.
 
 The per-pair table is the headline for Fisser comparability. The chip-level table is the segmentation-community-standard companion. Detection stats are required context for any cross-method MAE claim.
+
+The headline tables are reported on `v4_clean` (canonical baseline). A parallel run on `v4_raw` (no 40 m filter, no IC mask, all SZA bins) produces the same three CSV families. The delta between the two table sets, reported under matched (method, sza_bin) pairs, attributes performance differences to the preprocessing pipeline alone.

@@ -10,7 +10,7 @@ inherits: baseline_v1
 
 change:
   data:
-    manifest_id:      our_lt65_plus_nulls
+    manifest_id:      v4_clean_lt65_plus_nulls
     balancing_scheme: scheme_K_two_pos_per_null_size_balanced
   augmentation:
     enabled: true       # pinned so flipping baseline's aug default does not silently shift A8
