@@ -12,6 +12,11 @@ registry does two things:
      the slug already has a row, it is replaced (the old archive file stays).
      If it is new, a row is appended.
 
+`write_table(headers, rows, title, slug, caption, out_dir)` is a sibling
+shortcut for the common "render a small table as a PNG" pattern. It builds a
+matplotlib table figure inline and forwards to `write` so table figures
+land in the archive next to the rest.
+
 Callers pick any `out_dir`. A project-wide convention is
 `iceberg-rework/fig-archive/` + `iceberg-rework/figures.md`, but scripts can
 pass a run-specific dir when they want per-run figures.
@@ -20,6 +25,10 @@ pass a run-specific dir when they want per-run figures.
 import os
 import re
 from datetime import datetime
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 
 _TS_FMT = "%Y%m%d_%H%M%S"
@@ -101,3 +110,37 @@ def _update_index(out_dir, slug, fname, caption):
 
     with open(index_path, "w") as f:
         f.write("\n".join(lines) + "\n")
+
+
+def write_table(headers, rows, title, slug, caption, out_dir, *, col_widths=None):
+    """
+    Render a small (headers, rows) table as a PNG figure and route it through
+    `write`. Used for tables we want to publish alongside plots, not for
+    program-readable CSVs (those go to disk directly).
+
+    The header row is dark with white bold text; data rows alternate a light
+    grey shade. Cell text is centred. col_widths is reserved for future use.
+    """
+    n_cols = len(headers)
+    n_rows = len(rows)
+    fig_w = max(8, n_cols * 1.8)
+    fig_h = max(2, 0.4 * (n_rows + 2))
+
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    ax.axis("off")
+    table = ax.table(
+        cellText=rows, colLabels=headers, loc="center", cellLoc="center",
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1, 1.5)
+    for (r, _), cell in table.get_celld().items():
+        if r == 0:
+            cell.set_facecolor("#333333")
+            cell.set_text_props(color="white", fontweight="bold")
+        elif r % 2 == 0:
+            cell.set_facecolor("#f0f0f0")
+    ax.set_title(title, fontsize=12, fontweight="bold", pad=15)
+
+    write(fig, slug=slug, caption=caption, out_dir=out_dir)
+    plt.close(fig)

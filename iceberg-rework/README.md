@@ -146,11 +146,17 @@ Every experiment run writes `run_stamp.json` at the root of its run dir with the
 updates `<out_dir>/figures.md` so the slug points at the latest archive
 entry. Old entries stay on disk.
 
-`scripts/compare_model_eval.py` and
-`scripts/make_figure21_iou_gt_positive_comparison.py` route through the
-registry. Other figure scripts (`compare_areas.py`, `eval_methods.py`,
-`descriptive_stats.py`) still write directly via `fig.savefig` and will be
-migrated when their next regeneration happens.
+Every paper-bound figure script in the repo now routes through the
+registry: `compare_areas.py`, `compare_model_eval.py`, `eval_methods.py`,
+`descriptive_stats.py`, and `make_figure21_iou_gt_positive_comparison.py`.
+Tables published as PNGs use `_fig_registry.write_table(headers, rows,
+title, slug, caption, out_dir)`.
+
+Per-chip dumpers (`predict.py`, `visualize_*`, `build_lt65_nulls.py`,
+`add_small_icebergs.py`, `filter_small_icebergs.py`,
+`otsu_threshold_tifs.py`'s diagnostic PNGs) intentionally still call
+`fig.savefig` directly because they emit hundreds of files per run; routing
+those through `figures.md` would bloat the index.
 
 ---
 
