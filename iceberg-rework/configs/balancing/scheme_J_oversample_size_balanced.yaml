@@ -1,0 +1,40 @@
+# scheme_J_oversample_size_balanced: stage-2 size balancing via oversampling
+# only. Replicate small and mid root-length bins up to the largest bin count;
+# never undersample. No chip is dropped, so no training signal is lost.
+#
+# Pairs with on-by-default flips and rotations: each replicated chip gets a
+# different augmented view per epoch, so the gradient sees more distinct
+# instances of the rare bin without seeing the underlying pixels twice.
+
+id: scheme_J_oversample_size_balanced
+stage: train_only
+
+rules:
+  drop_gt_zero: false
+  size_balance:
+    kind:                   oversample_only
+    bins:                   [rl_40_100, rl_100_300, rl_300_plus]
+    target_per_bin:         max_present       # match the largest size bin
+    max_oversample_ratio:   4.0               # cap; 5-chip bin never grows past 20
+  class_balance:
+    kind: none
+
+implementation:
+  module: scripts/balance_training.py
+  entry:  main
+  args:
+    - --balance_positive_area_bins
+    - --oversample_only
+    - --max_oversample_ratio
+    - "4.0"
+
+notes: |
+  Addresses the gradient-frequency imbalance between size bins without the
+  memorisation risk of unbounded replication. The 4x cap keeps a 5-chip bin
+  from being trained on harder than a 60-chip bin, while still narrowing the
+  gap from 12:1 to 3:1.
+
+  Use scheme_J as a building block: combine with scheme_D (2:1 fixed pos
+  bias) or scheme_I (adaptive 2:1) by chaining flags in a future scheme_K /
+  scheme_L if you want simultaneous class and size balancing. scheme_J on
+  its own only addresses size, leaving class proportions natural.
