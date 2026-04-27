@@ -32,6 +32,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from _method_common import load_manifest
+from _fig_registry import write as write_fig
 
 warnings.filterwarnings("ignore")
 
@@ -348,8 +349,12 @@ def eval_method(method, test_dir, gt_records, skip_policy="count_as_false_negati
     return results
 
 
-def plot_iou_heatmap(summary, out_dir):
-    """Heatmap: rows = method, cols = SZA bin, values = mean IoU."""
+def plot_iou_heatmap(summary, out_dir, slug_suffix=""):
+    """
+    Heatmap: rows = method, cols = SZA bin, values = mean IoU. slug_suffix
+    distinguishes the all-chips run from the GT-positive-only run so both
+    versions land as separate slugs in figures.md.
+    """
     methods  = [m for m in METHODS if m in summary["method"].values]
     bins     = [b for b in SZA_ORDER if b in summary["sza_bin"].values]
     if not methods or not bins:
@@ -373,7 +378,7 @@ def plot_iou_heatmap(summary, out_dir):
     ax.set_yticks(range(len(methods)))
     ax.set_yticklabels(methods, fontsize=11)
     ax.set_xlabel("Solar Zenith Angle bin", fontsize=12)
-    ax.set_title("Mean iceberg IoU vs ground truth: method × SZA bin",
+    ax.set_title("Mean iceberg IoU vs ground truth: method x SZA bin",
                  fontsize=13, fontweight="bold")
 
     # Annotate cells
@@ -386,14 +391,25 @@ def plot_iou_heatmap(summary, out_dir):
                         fontweight="bold")
 
     plt.tight_layout()
-    out_path = os.path.join(out_dir, "eval_iou_heatmap.png")
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    write_fig(
+        fig,
+        slug=f"eval_iou_heatmap{slug_suffix}",
+        caption=(
+            "Mean iceberg IoU per method (rows) and SZA bin (columns) "
+            "against the ground truth, averaged over the chips contributing "
+            "to each cell. Greener cells are more accurate."
+        ),
+        out_dir=out_dir,
+    )
     plt.close(fig)
-    print(f"Saved: {out_path}")
 
 
-def plot_metric_bars(summary, metric, out_dir):
-    """Grouped bar chart for a given metric across methods and SZA bins."""
+def plot_metric_bars(summary, metric, out_dir, slug_suffix=""):
+    """
+    Grouped bar chart for one metric across methods and SZA bins.
+    slug_suffix is appended to the figures.md slug so the all-chips and
+    GT-positive-only variants do not collide.
+    """
     methods  = [m for m in METHODS if m in summary["method"].values]
     bins     = [b for b in SZA_ORDER if b in summary["sza_bin"].values]
     if not methods or not bins:
@@ -424,11 +440,17 @@ def plot_metric_bars(summary, metric, out_dir):
                  fontsize=13, fontweight="bold")
     ax.legend(fontsize=9)
     plt.tight_layout()
-
-    out_path = os.path.join(out_dir, f"eval_{metric}_bars.png")
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    write_fig(
+        fig,
+        slug=f"eval_{metric}_bars{slug_suffix}",
+        caption=(
+            f"Mean {metric.upper()} per method and SZA bin against the "
+            "ground truth iceberg mask. The same method-color palette is "
+            "used across all bar charts."
+        ),
+        out_dir=out_dir,
+    )
     plt.close(fig)
-    print(f"Saved: {out_path}")
 
 
 def print_summary_table(summary, metric="iou"):
@@ -597,31 +619,17 @@ def main():
         for metric in ["iou", "precision", "recall"]:
             print_summary_table(summary_pos, metric)
 
-        plot_iou_heatmap(summary_pos, args.out_dir)
-        os.replace(
-            os.path.join(args.out_dir, "eval_iou_heatmap.png"),
-            os.path.join(args.out_dir, "eval_iou_heatmap_gt_positive_only.png")
-        )
-        print(f"Saved: {os.path.join(args.out_dir, 'eval_iou_heatmap_gt_positive_only.png')}")
-
+        plot_iou_heatmap(summary_pos, args.out_dir, slug_suffix="_gt_positive_only")
         for metric in ["iou", "precision", "recall"]:
-            plot_metric_bars(summary_pos, metric, args.out_dir)
-            src = os.path.join(args.out_dir, f"eval_{metric}_bars.png")
-            dst = os.path.join(args.out_dir, f"eval_{metric}_bars_gt_positive_only.png")
-            os.replace(src, dst)
-            print(f"Saved: {dst}")
-
-        # Rebuild the all-chip plots so the original filenames still exist
-        plot_iou_heatmap(summary, args.out_dir)
-        for metric in ["iou", "precision", "recall"]:
-            plot_metric_bars(summary, metric, args.out_dir)
+            plot_metric_bars(summary_pos, metric, args.out_dir,
+                             slug_suffix="_gt_positive_only")
 
     print(f"\n{'─'*50}")
     print(f"Outputs in: {args.out_dir}/")
     print(f"  eval_results.csv      , per-chip IoU/precision/recall/F1")
     print(f"  eval_summary.csv      , mean metrics per (method, sza_bin)")
     print(f"  eval_summary_gt_positive_only.csv")
-    print(f"  eval_iou_heatmap.png  , IoU heatmap: method × SZA bin")
+    print(f"  eval_iou_heatmap.png  , IoU heatmap: method x SZA bin")
     print(f"  eval_iou_heatmap_gt_positive_only.png")
     print(f"  eval_iou_bars.png     , IoU bar chart")
     print(f"  eval_iou_bars_gt_positive_only.png")

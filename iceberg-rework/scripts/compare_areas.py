@@ -1,17 +1,17 @@
 """
-compare_areas.py — Compare iceberg areas across all 6 segmentation methods.
+compare_areas.py: Compare iceberg areas across all 6 segmentation methods.
 
 Loads all_icebergs.gpkg for each method from the test-set output directory
 (area_comparison/test/{sza_bin}/{METHOD}/all_icebergs.gpkg), computes per-bin
 area statistics, and produces summary plots for each pair of methods.
 
 Methods compared:
-  TR        — fixed NIR threshold (B08 ≥ 0.22)
-  OT        — per-chip Otsu on B08
-  UNet      — UNet++ argmax
-  UNet_TR   — UNet++ + fixed threshold on P(iceberg)
-  UNet_OT   — UNet++ + Otsu on P(iceberg)
-  UNet_CRF  — UNet++ + DenseCRF
+  TR       : fixed NIR threshold (B08 >= 0.22)
+  OT       : per-chip Otsu on B08
+  UNet     : UNet++ argmax
+  UNet_TR  : UNet++ + fixed threshold on P(iceberg)
+  UNet_OT  : UNet++ + Otsu on P(iceberg)
+  UNet_CRF : UNet++ + DenseCRF
 
 Usage:
   python compare_areas.py \\
@@ -37,9 +37,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
+from _fig_registry import write as write_fig
+
 warnings.filterwarnings("ignore")
 
-# ── Constants ─────────────────────────────────────────────────────────────────
+# -- Constants -----------------------------------------------------------------
 
 SZA_ORDER  = ["sza_lt65", "sza_65_70", "sza_70_75", "sza_gt75"]
 SZA_LABELS = {
@@ -51,7 +53,7 @@ SZA_LABELS = {
 
 METHODS = ["TR", "OT", "UNet", "UNet_TR", "UNet_OT", "UNet_CRF"]
 METHOD_LABELS = {
-    "TR":       "Threshold (NIR ≥ 0.22)",
+    "TR":       "Threshold (NIR >= 0.22)",
     "OT":       "Otsu (NIR)",
     "UNet":     "UNet++",
     "UNet_TR":  "UNet++ + Threshold",
@@ -68,7 +70,7 @@ METHOD_COLORS = {
 }
 
 
-# ── Data loading ──────────────────────────────────────────────────────────────
+# -- Data loading --------------------------------------------------------------
 
 def collect_data(test_dir):
     """
@@ -116,7 +118,7 @@ def collect_data(test_dir):
     return pd.DataFrame(records)
 
 
-# ── Summary stats ─────────────────────────────────────────────────────────────
+# -- Summary stats -------------------------------------------------------------
 
 def summary_stats(df):
     stats = (
@@ -139,13 +141,13 @@ def summary_stats(df):
     return stats
 
 
-# ── Box plots (all methods, one subplot per SZA bin) ─────────────────────────
+# -- Box plots (all methods, one subplot per SZA bin) -------------------------
 
 def plot_boxplots(df, out_dir):
     present_bins    = [b for b in SZA_ORDER if b in df["sza_bin"].values]
     present_methods = [m for m in METHODS if m in df["method"].values]
     if not present_bins:
-        print("No SZA bins found — skipping box plots.")
+        print("No SZA bins found: skipping box plots.")
         return
 
     n_bins    = len(present_bins)
@@ -178,7 +180,7 @@ def plot_boxplots(df, out_dir):
     ax.set_xticks(x_ticks)
     ax.set_xticklabels(x_labels, fontsize=11)
     ax.set_xlabel("Solar Zenith Angle bin", fontsize=12)
-    ax.set_ylabel("Iceberg area (m²)", fontsize=12)
+    ax.set_ylabel("Iceberg area (m2)", fontsize=12)
     ax.set_title("Iceberg area distributions by SZA bin and method (test set)",
                  fontsize=13, fontweight="bold")
     ax.legend(handles=[
@@ -187,13 +189,21 @@ def plot_boxplots(df, out_dir):
     ], fontsize=9, loc="upper right")
 
     plt.tight_layout()
-    out_path = os.path.join(out_dir, "area_boxplots.png")
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    write_fig(
+        fig,
+        slug="area_boxplots",
+        caption=(
+            "Iceberg area distributions per SZA bin and method on the test "
+            "set. Boxes are 25th to 75th percentile; whiskers 5th to 95th. "
+            "Methods that systematically over- or under-estimate area show "
+            "as offsets between method boxes within each bin."
+        ),
+        out_dir=out_dir,
+    )
     plt.close(fig)
-    print(f"Saved: {out_path}")
 
 
-# ── Count bar chart (iceberg counts per bin per method) ──────────────────────
+# -- Count bar chart (iceberg counts per bin per method) ----------------------
 
 def plot_counts(stats, out_dir):
     present_bins    = [b for b in SZA_ORDER if b in stats["sza_bin"].values]
@@ -226,20 +236,27 @@ def plot_counts(stats, out_dir):
                  fontsize=13, fontweight="bold")
     ax.legend(fontsize=9, loc="upper right")
     plt.tight_layout()
-
-    out_path = os.path.join(out_dir, "area_counts.png")
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    write_fig(
+        fig,
+        slug="area_counts",
+        caption=(
+            "Detection count per SZA bin and method on the test set. "
+            "Higher counts at high SZA from threshold-based methods often "
+            "indicate sea-ice or shadow-edge false positives rather than "
+            "real iceberg detections."
+        ),
+        out_dir=out_dir,
+    )
     plt.close(fig)
-    print(f"Saved: {out_path}")
 
 
-# ── Mean area trend (line plot, one line per method) ─────────────────────────
+# -- Mean area trend (line plot, one line per method) -------------------------
 
 def plot_mean_trend(stats, out_dir):
     present_bins    = [b for b in SZA_ORDER if b in stats["sza_bin"].values]
     present_methods = [m for m in METHODS if m in stats["method"].values]
     if len(present_bins) < 2:
-        print("Only one SZA bin present — skipping mean trend plot (need ≥ 2).")
+        print("Only one SZA bin present: skipping mean trend plot (need >= 2).")
         return
 
     markers = ["o", "s", "^", "D", "v", "P"]
@@ -270,28 +287,34 @@ def plot_mean_trend(stats, out_dir):
     ax.set_xticks(range(len(present_bins)))
     ax.set_xticklabels([SZA_LABELS.get(b, b) for b in present_bins], fontsize=11)
     ax.set_xlabel("Solar Zenith Angle bin", fontsize=12)
-    ax.set_ylabel("Mean iceberg area (m²)", fontsize=12)
+    ax.set_ylabel("Mean iceberg area (m2)", fontsize=12)
     ax.set_title("Mean iceberg area by SZA bin and method (test set)",
                  fontsize=13, fontweight="bold")
     ax.legend(fontsize=9)
     plt.tight_layout()
-
-    out_path = os.path.join(out_dir, "area_mean_trend.png")
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    write_fig(
+        fig,
+        slug="area_mean_trend",
+        caption=(
+            "Mean detected iceberg area per SZA bin and method on the test "
+            "set. Diverging trends across SZA bins reveal which methods are "
+            "most sensitive to illumination geometry."
+        ),
+        out_dir=out_dir,
+    )
     plt.close(fig)
-    print(f"Saved: {out_path}")
 
 
-# ── Ratio plot (each method / UNet, across SZA bins) ─────────────────────────
+# -- Ratio plot (each method / UNet, across SZA bins) -------------------------
 
 def plot_ratio(stats, out_dir):
     present_bins    = [b for b in SZA_ORDER if b in stats["sza_bin"].values]
     present_methods = [m for m in METHODS if m in stats["method"].values and m != "UNet"]
     if len(present_bins) < 2:
-        print("Only one SZA bin present — skipping ratio plot (need ≥ 2).")
+        print("Only one SZA bin present: skipping ratio plot (need >= 2).")
         return
     if "UNet" not in stats["method"].values:
-        print("UNet results not found — skipping ratio plot.")
+        print("UNet results not found: skipping ratio plot.")
         return
 
     markers = ["o", "s", "^", "D", "v"]
@@ -331,14 +354,21 @@ def plot_ratio(stats, out_dir):
                  "(ratio > 1 → UNet++ detects larger mean area)", fontsize=13)
     ax.legend(fontsize=8)
     plt.tight_layout()
-
-    out_path = os.path.join(out_dir, "area_ratio.png")
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    write_fig(
+        fig,
+        slug="area_ratio",
+        caption=(
+            "Ratio of UNet++ mean iceberg area to each comparison method's "
+            "mean iceberg area, by SZA bin. Ratio > 1 means UNet++ reports "
+            "larger icebergs than the comparison method (the threshold-based "
+            "methods tend to under-segment shadow-bridged blocks at high SZA)."
+        ),
+        out_dir=out_dir,
+    )
     plt.close(fig)
-    print(f"Saved: {out_path}")
 
 
-# ── Summary table print ───────────────────────────────────────────────────────
+# -- Summary table print -------------------------------------------------------
 
 def print_comparison_table(stats):
     """Print count × mean_m2 table: rows=SZA bin, columns=method."""
@@ -347,47 +377,47 @@ def print_comparison_table(stats):
 
     col_w = 18
     header = f"{'SZA bin':<14}" + "".join(f"{m:>{col_w}}" for m in methods)
-    print("\n" + "─" * len(header))
+    print("\n" + "-" * len(header))
     print("Iceberg count (n)")
     print(header)
-    print("─" * len(header))
+    print("-" * len(header))
     for sza_bin in bins:
         row = f"{SZA_LABELS.get(sza_bin, sza_bin):<14}"
         for m in methods:
             r = stats[(stats["sza_bin"] == sza_bin) & (stats["method"] == m)]
-            val = int(r["count"].values[0]) if len(r) else "—"
+            val = int(r["count"].values[0]) if len(r) else ","
             row += f"{str(val):>{col_w}}"
         print(row)
-    print("─" * len(header))
+    print("-" * len(header))
 
-    print("\n" + "─" * len(header))
-    print("Mean iceberg area (m²)")
+    print("\n" + "-" * len(header))
+    print("Mean iceberg area (m2)")
     print(header)
-    print("─" * len(header))
+    print("-" * len(header))
     for sza_bin in bins:
         row = f"{SZA_LABELS.get(sza_bin, sza_bin):<14}"
         for m in methods:
             r = stats[(stats["sza_bin"] == sza_bin) & (stats["method"] == m)]
-            val = f"{r['mean_m2'].values[0]:.1f}" if len(r) else "—"
+            val = f"{r['mean_m2'].values[0]:.1f}" if len(r) else ","
             row += f"{str(val):>{col_w}}"
         print(row)
-    print("─" * len(header))
+    print("-" * len(header))
 
-    print("\n" + "─" * len(header))
-    print("Total iceberg area (m²)")
+    print("\n" + "-" * len(header))
+    print("Total iceberg area (m2)")
     print(header)
-    print("─" * len(header))
+    print("-" * len(header))
     for sza_bin in bins:
         row = f"{SZA_LABELS.get(sza_bin, sza_bin):<14}"
         for m in methods:
             r = stats[(stats["sza_bin"] == sza_bin) & (stats["method"] == m)]
-            val = f"{r['total_m2'].values[0]:.0f}" if len(r) else "—"
+            val = f"{r['total_m2'].values[0]:.0f}" if len(r) else ","
             row += f"{str(val):>{col_w}}"
         print(row)
-    print("─" * len(header))
+    print("-" * len(header))
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# -- Main ----------------------------------------------------------------------
 
 def main():
     default_test_dir = os.path.join(
@@ -398,7 +428,7 @@ def main():
         description="Compare iceberg areas across all 6 methods (test set)"
     )
     parser.add_argument("--test_dir", default=default_test_dir,
-        help="Root of area_comparison/test/ — contains {sza_bin}/{METHOD}/all_icebergs.gpkg")
+        help="Root of area_comparison/test/: contains {sza_bin}/{METHOD}/all_icebergs.gpkg")
     parser.add_argument("--out_dir",
         default=os.path.join(RESEARCH, "test_outputs"),
         help="Output directory for plots and CSV")
@@ -429,13 +459,13 @@ def main():
     plot_mean_trend(stats, args.out_dir)
     plot_ratio(stats, args.out_dir)
 
-    print(f"\n{'─'*50}")
+    print(f"\n{'-'*50}")
     print(f"Outputs in: {args.out_dir}/")
-    print(f"  area_stats.csv       — per-(sza_bin, method) statistics")
-    print(f"  area_boxplots.png    — area distributions (box plots, all methods)")
-    print(f"  area_counts.png      — iceberg detection counts per bin/method")
-    print(f"  area_mean_trend.png  — mean area trend across SZA bins")
-    print(f"  area_ratio.png       — UNet++ / comparison method area ratio")
+    print(f"  area_stats.csv      : per-(sza_bin, method) statistics")
+    print(f"  area_boxplots.png   : area distributions (box plots, all methods)")
+    print(f"  area_counts.png     : iceberg detection counts per bin/method")
+    print(f"  area_mean_trend.png : mean area trend across SZA bins")
+    print(f"  area_ratio.png      : UNet++ / comparison method area ratio")
 
 
 if __name__ == "__main__":

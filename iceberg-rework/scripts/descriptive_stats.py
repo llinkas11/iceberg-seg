@@ -1,5 +1,5 @@
 """
-descriptive_stats.py — Per-iceberg descriptive statistics and exploratory analysis.
+descriptive_stats.py, Per-iceberg descriptive statistics and exploratory analysis.
 
 Produces:
   1. Per-iceberg root-length histogram (one subplot per SZA bin)
@@ -32,7 +32,9 @@ from scipy.ndimage import label as cc_label, binary_dilation
 from PIL import Image, ImageDraw
 import rasterio
 
-# ── Paths ────────────────────────────────────────────────────────────────────
+from _fig_registry import write as write_fig
+
+# -- Paths --------------------------------------------------------------------
 SMISHRA = "/mnt/research/v.gomezgilyaspik/students/smishra/rework"
 LLINKAS = "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework"
 
@@ -60,8 +62,9 @@ def strip_rf_hash(fn):
     return RF_HASH_RE.sub(".png", fn)
 
 
-def save_table_as_figure(headers, rows, title, out_path, col_widths=None):
-    """Render a table as a PNG figure."""
+def save_table_as_figure(headers, rows, title, slug, caption, out_dir,
+                         col_widths=None):
+    """Render a table as a PNG figure routed through the figure registry."""
     n_cols = len(headers)
     n_rows = len(rows)
     fig_w = max(8, n_cols * 1.8)
@@ -81,7 +84,7 @@ def save_table_as_figure(headers, rows, title, out_path, col_widths=None):
         elif r % 2 == 0:
             cell.set_facecolor("#f0f0f0")
     ax.set_title(title, fontsize=12, fontweight="bold", pad=15)
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    write_fig(fig, slug=slug, caption=caption, out_dir=out_dir)
     plt.close(fig)
 
 
@@ -190,7 +193,7 @@ def main():
     args = parser.parse_args()
     os.makedirs(args.viz_dir, exist_ok=True)
 
-    # ── Load data ────────────────────────────────────────────────────────
+    # -- Load data --------------------------------------------------------
     print("Loading data...")
     coco_records, coco_chips, coco, img_sza, ann_by_img = load_coco_per_iceberg(FILTERED_COCO, SPLIT_LOG)
     fisser_records, fisser_chips, fisser_X, fisser_Y = load_fisser_per_iceberg(FISSER_FILTERED)
@@ -201,9 +204,9 @@ def main():
     print(f"  COCO: {len(coco_records)} icebergs, {len(coco_chips)} chips")
     print(f"  Fisser: {len(fisser_records)} icebergs, {len(fisser_chips)} chips")
 
-    # ══════════════════════════════════════════════════════════════════════
-    # 1. Root-length histogram — one subplot per SZA bin, independent y-axes
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
+    # 1. Root-length histogram, one subplot per SZA bin, independent y-axes
+    # ======================================================================
     print("Plot 1: Root-length histograms...")
     fig, axes = plt.subplots(1, 4, figsize=(18, 4.5))
     for ax, sza in zip(axes, SZA_BINS):
@@ -216,14 +219,23 @@ def main():
     axes[0].set_ylabel("Count")
     fig.suptitle("Per-Iceberg Root Length Distribution (after 40m filter, shadow merged)", fontsize=13, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.93])
-    fig.savefig(os.path.join(args.viz_dir, "hist_root_length.png"), dpi=150, bbox_inches="tight")
+    write_fig(
+        fig,
+        slug="hist_root_length",
+        caption=(
+            "Per-iceberg root-length distribution by SZA bin, after the 40 m "
+            "cutoff and shadow merge. Count axis matches; per-bin sample n is "
+            "annotated in the corner of each panel."
+        ),
+        out_dir=args.viz_dir,
+    )
     plt.close(fig)
 
-    # ══════════════════════════════════════════════════════════════════════
-    # 2. Relative abundance table → figure
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
+    # 2. Relative abundance table to figure
+    # ======================================================================
     print("Table 1: Relative abundance...")
-    headers = ["SZA Bin", "N chips", "n(0)", "n(≥1)", "n(≥5)", "n(0):n(≥1):n(≥5)"]
+    headers = ["SZA Bin", "N chips", "n(0)", "n(>=1)", "n(>=5)", "n(0):n(>=1):n(>=5)"]
     rows = []
     for sza in SZA_BINS + ["all"]:
         chips = all_chips if sza == "all" else [c for c in all_chips if c["sza_bin"] == sza]
@@ -231,12 +243,22 @@ def main():
         n1 = sum(1 for c in chips if c["n_icebergs"] >= 1)
         n5 = sum(1 for c in chips if c["n_icebergs"] >= 5)
         rows.append([sza, str(len(chips)), str(n0), str(n1), str(n5), f"{n0}:{n1}:{n5}"])
-    save_table_as_figure(headers, rows, "Relative Abundance: Icebergs per Chip",
-                         os.path.join(args.viz_dir, "table_relative_abundance.png"))
+    save_table_as_figure(
+        headers, rows,
+        title="Relative Abundance: Icebergs per Chip",
+        slug="table_relative_abundance",
+        caption=(
+            "Per-SZA-bin counts of chips with zero, one or more, and five or "
+            "more annotated icebergs after the 40 m filter. The last column "
+            "is the n(0):n(>=1):n(>=5) ratio that drove the balancing-scheme "
+            "design."
+        ),
+        out_dir=args.viz_dir,
+    )
 
-    # ══════════════════════════════════════════════════════════════════════
-    # 3a. Count vs month — one subplot per SZA bin
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
+    # 3a. Count vs month, one subplot per SZA bin
+    # ======================================================================
     print("Plot 3a: Month histograms...")
     month_names = {7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov"}
     active_months = sorted(set(m for cs, (m, s) in chip_months.items()))
@@ -257,12 +279,20 @@ def main():
     axes[0].set_ylabel("Chip Count")
     fig.suptitle("Chip Count by Acquisition Month", fontsize=13, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.93])
-    fig.savefig(os.path.join(args.viz_dir, "hist_month.png"), dpi=150, bbox_inches="tight")
+    write_fig(
+        fig,
+        slug="hist_month",
+        caption=(
+            "Chip count by acquisition month per SZA bin, showing the "
+            "Sep-Nov sampling window. Per-bin n shown in each panel."
+        ),
+        out_dir=args.viz_dir,
+    )
     plt.close(fig)
 
-    # ══════════════════════════════════════════════════════════════════════
-    # 3b. Count vs wind speed — one subplot per SZA bin
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
+    # 3b. Count vs wind speed, one subplot per SZA bin
+    # ======================================================================
     print("Plot 3b: Wind histograms...")
     fig, axes = plt.subplots(1, 4, figsize=(18, 4), sharey=True)
     for ax, sza in zip(axes, SZA_BINS):
@@ -277,12 +307,22 @@ def main():
     axes[0].set_ylabel("Chip Count")
     fig.suptitle("Chip Count by Wind Speed (ERA5)", fontsize=13, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.93])
-    fig.savefig(os.path.join(args.viz_dir, "hist_wind.png"), dpi=150, bbox_inches="tight")
+    write_fig(
+        fig,
+        slug="hist_wind",
+        caption=(
+            "Per-bin distribution of ERA5 10 m wind speed at chip "
+            "acquisition time. Red dashed line marks the 15 m/s threshold "
+            "above which iceberg detection is considered confounded; no "
+            "chip in our dataset crosses it."
+        ),
+        out_dir=args.viz_dir,
+    )
     plt.close(fig)
 
-    # ══════════════════════════════════════════════════════════════════════
-    # 3c. Count vs temperature — one subplot per SZA bin
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
+    # 3c. Count vs temperature, one subplot per SZA bin
+    # ======================================================================
     print("Plot 3c: Temperature histograms...")
     fig, axes = plt.subplots(1, 4, figsize=(18, 4), sharey=True)
     for ax, sza in zip(axes, SZA_BINS):
@@ -297,12 +337,22 @@ def main():
     axes[0].set_ylabel("Chip Count")
     fig.suptitle("Chip Count by Temperature (ERA5)", fontsize=13, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.93])
-    fig.savefig(os.path.join(args.viz_dir, "hist_temp.png"), dpi=150, bbox_inches="tight")
+    write_fig(
+        fig,
+        slug="hist_temp",
+        caption=(
+            "Per-bin distribution of ERA5 2 m air temperature at chip "
+            "acquisition time. Red dashed line marks 0 C; the high-SZA bin "
+            "is dominated by sub-zero temperatures, a confound documented "
+            "in plan.md but not filtered."
+        ),
+        out_dir=args.viz_dir,
+    )
     plt.close(fig)
 
-    # ══════════════════════════════════════════════════════════════════════
-    # 3d. Area distribution — one subplot per SZA bin + combined log-log
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
+    # 3d. Area distribution, one subplot per SZA bin + combined log-log
+    # ======================================================================
     print("Plot 3d: Area histograms...")
     fig, axes = plt.subplots(1, 5, figsize=(22, 4))
     for ax, sza in zip(axes[:4], SZA_BINS):
@@ -310,7 +360,7 @@ def main():
         if areas:
             ax.hist(areas, bins=40, range=(1600, 100000), color=SZA_COLORS[sza],
                     edgecolor="white", linewidth=0.3)
-        ax.set_xlabel("Area (m²)")
+        ax.set_xlabel("Area (m2)")
         ax.set_title(SZA_LABELS[sza], fontsize=10)
         ax.text(0.95, 0.92, f"n={len(areas)}", transform=ax.transAxes, ha="right", fontsize=9)
     axes[0].set_ylabel("Count")
@@ -321,16 +371,25 @@ def main():
     ax.hist(all_areas, bins=bins_log, color="#666", edgecolor="white", linewidth=0.3)
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlabel("Area (m²) [log]")
+    ax.set_xlabel("Area (m2) [log]")
     ax.set_title("Power Law Check\n(all bins)", fontsize=10)
     fig.suptitle("Iceberg Area Distribution", fontsize=13, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.93])
-    fig.savefig(os.path.join(args.viz_dir, "hist_area.png"), dpi=150, bbox_inches="tight")
+    write_fig(
+        fig,
+        slug="hist_area",
+        caption=(
+            "Per-iceberg area distribution by SZA bin (top row) plus a "
+            "log-log power-law check across all bins (bottom). The 40 m "
+            "root-length floor produces the visible left edge."
+        ),
+        out_dir=args.viz_dir,
+    )
     plt.close(fig)
 
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
     # 4. B08 inside icebergs table → figure
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
     print("Computing B08 inside icebergs per SZA bin...")
     b08_by_bin = {sza: [] for sza in SZA_BINS}
     ocean_by_bin = {sza: [] for sza in SZA_BINS}
@@ -396,14 +455,22 @@ def main():
             f"{ib.mean():.3f}", f"{ob.mean():.3f}", f"{ct.mean():.3f}",
             f"{(ib < 0.22).mean()*100:.1f}%"
         ])
-    save_table_as_figure(headers, tbl_rows,
-                         "Mean B08 Reflectance Inside Icebergs vs Ocean per SZA Bin",
-                         os.path.join(args.viz_dir, "table_b08_per_sza.png"))
-    print("  Saved table_b08_per_sza.png")
+    save_table_as_figure(
+        headers, tbl_rows,
+        title="Mean B08 Reflectance Inside Icebergs vs Ocean per SZA Bin",
+        slug="table_b08_per_sza",
+        caption=(
+            "Mean B08 reflectance inside annotated icebergs vs the open-water "
+            "ocean class, with iceberg-minus-ocean contrast and the fraction "
+            "of iceberg pixels below the 0.22 NIR threshold. The last column "
+            "motivates rejecting a dynamic per-bin threshold."
+        ),
+        out_dir=args.viz_dir,
+    )
 
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
     # 5. Iceberg vs 100m neighborhood histograms (Fisser Fig. 9 equivalent)
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
     print("Computing iceberg vs neighborhood B08 distributions...")
     ice_px_by_bin = {sza: [] for sza in SZA_BINS}
     neigh_px_by_bin = {sza: [] for sza in SZA_BINS}
@@ -476,32 +543,48 @@ def main():
     fig.suptitle("Iceberg vs 100m Neighborhood B08 Reflectance\n(cf. Fisser 2024 Fig. 9, shadow merged into iceberg)",
                  fontsize=13, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.90])
-    fig.savefig(os.path.join(args.viz_dir, "hist_iceberg_vs_neighborhood_b08.png"), dpi=150, bbox_inches="tight")
+    write_fig(
+        fig,
+        slug="hist_iceberg_vs_neighborhood_b08",
+        caption=(
+            "Iceberg vs 100 m-neighbourhood B08 reflectance, density "
+            "histograms per SZA bin (cf. Fisser 2024 Fig. 9, shadow merged "
+            "into iceberg). Black dashed line is the 0.22 NIR threshold."
+        ),
+        out_dir=args.viz_dir,
+    )
     plt.close(fig)
-    print("  Saved hist_iceberg_vs_neighborhood_b08.png")
 
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
     # 6. Fisser 2025 comparison table → figure
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
     areas_all = np.array([r["area_m2"] for r in all_records])
     rls_all = np.sqrt(areas_all)
     headers = ["Metric", "Our Dataset", "Fisser 2025"]
     tbl_rows = [
-        ["N icebergs", f"{len(areas_all):,}", "—"],
-        ["Mean area (m²)", f"{areas_all.mean():,.0f}", "2,468"],
-        ["Median area (m²)", f"{np.median(areas_all):,.0f}", "—"],
-        ["Max area (m²)", f"{areas_all.max():,.0f}", "399,700"],
+        ["N icebergs", f"{len(areas_all):,}", ","],
+        ["Mean area (m2)", f"{areas_all.mean():,.0f}", "2,468"],
+        ["Median area (m2)", f"{np.median(areas_all):,.0f}", ","],
+        ["Max area (m2)", f"{areas_all.max():,.0f}", "399,700"],
         ["Mean RL (m)", f"{rls_all.mean():.0f}", "~50"],
         ["Max RL (m)", f"{rls_all.max():.0f}", "632"],
-        ["> 400,000 m² (clumps?)", f"{int((areas_all > 400000).sum())}", "0 (by definition)"],
+        ["> 400,000 m2 (clumps?)", f"{int((areas_all > 400000).sum())}", "0 (by definition)"],
     ]
-    save_table_as_figure(headers, tbl_rows, "Comparison with Fisser 2025 Reference Values",
-                         os.path.join(args.viz_dir, "table_fisser_comparison.png"))
-    print("  Saved table_fisser_comparison.png")
+    save_table_as_figure(
+        headers, tbl_rows,
+        title="Comparison with Fisser 2025 Reference Values",
+        slug="table_fisser_comparison",
+        caption=(
+            "Side-by-side iceberg statistics for our dataset and the Fisser "
+            "(2025) reference values. Outliers above 400,000 m2 are marked "
+            "as candidate multi-iceberg clumps for review."
+        ),
+        out_dir=args.viz_dir,
+    )
 
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
     # 7. Summary CSV
-    # ══════════════════════════════════════════════════════════════════════
+    # ======================================================================
     os.makedirs(os.path.dirname(args.out_csv), exist_ok=True)
     with open(args.out_csv, "w", newline="") as f:
         writer = csv.writer(f)
