@@ -1,0 +1,30 @@
+# A7: A4 + size-only oversample balancing.
+#
+# Single controlled difference from A4 is the balancing scheme: scheme_C
+# (1:1 GT+/GT0 with no size step) becomes scheme_J (no class change, size
+# oversampled up to max_present with 4x cap). Tests the size axis on a
+# fixed dataset and aug pinning.
+
+id: exp_A7_our_lt65_plus_nulls_aug_size
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      our_lt65_plus_nulls
+    balancing_scheme: scheme_J_oversample_size_balanced
+  augmentation:
+    enabled: true       # pinned so flipping baseline's aug default does not silently shift A7
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A7
+  compared_to: exp_A4_our_lt65_plus_nulls_aug
+
+notes: |
+  Paired with A4 (no size balance) and A8 / A9 (size + class balance).
+  A4 -> A7 isolates the gradient-frequency rebalance that scheme_J
+  introduces. With augmentation on, replicated chips get distinct
+  geometric views per epoch, so the lift attributable to A7 is
+  frequency-driven, not memorisation-driven.

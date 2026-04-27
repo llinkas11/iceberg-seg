@@ -1,0 +1,29 @@
+# A9: A6 + size oversample balancing.
+#
+# Adds the size-balance step to A6's adaptive class-balance step: scheme_I
+# (2:1 majority:minority with per-bin direction) becomes scheme_L (same
+# adaptive class bias plus size oversample to max_present, 4x cap). Both
+# axes balanced; size step never drops a chip.
+
+id: exp_A9_our_lt65_plus_nulls_aug_adaptive_size
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      our_lt65_plus_nulls
+    balancing_scheme: scheme_L_adaptive_size_balanced
+  augmentation:
+    enabled: true       # pinned so flipping baseline's aug default does not silently shift A9
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A9
+  compared_to: exp_A6_our_lt65_plus_nulls_aug_adaptive
+
+notes: |
+  A6 -> A9 isolates the size-balance addition on top of adaptive 2:1
+  class balance. With A4, A5, A6, A7, A8, A9 in place the dataset
+  progression covers the full 2x3 grid of (no class balance, fixed pos
+  bias, adaptive 2:1) crossed with (no size balance, oversample size).

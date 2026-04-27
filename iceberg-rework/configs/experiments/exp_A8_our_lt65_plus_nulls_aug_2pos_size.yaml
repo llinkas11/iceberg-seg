@@ -1,0 +1,28 @@
+# A8: A5 + size oversample balancing.
+#
+# Adds the size-balance step to A5's class-balance step: scheme_D (2:1
+# fixed pos-majority) becomes scheme_K (2:1 fixed pos-majority + size
+# oversample to max_present, 4x cap). Both axes balanced, no chip
+# dropped at the size step.
+
+id: exp_A8_our_lt65_plus_nulls_aug_2pos_size
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      our_lt65_plus_nulls
+    balancing_scheme: scheme_K_two_pos_per_null_size_balanced
+  augmentation:
+    enabled: true       # pinned so flipping baseline's aug default does not silently shift A8
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A8
+  compared_to: exp_A5_our_lt65_plus_nulls_aug_2pos
+
+notes: |
+  A5 -> A8 isolates the size-balance addition on top of fixed 2:1 class
+  bias. Pair with A7 (size only) to read off the marginal lift each
+  balancing step provides.
