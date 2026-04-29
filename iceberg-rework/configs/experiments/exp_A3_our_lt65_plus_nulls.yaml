@@ -9,7 +9,7 @@ inherits: baseline_v1
 
 change:
   data:
-    manifest_id:      our_lt65_plus_nulls
+    manifest_id:      v4_clean_lt65_plus_nulls
     balancing_scheme: scheme_C_our_lt65_plus_nulls
   augmentation:
     enabled: false
@@ -22,6 +22,11 @@ progression:
   compared_to: exp_A2_our_lt65
 
 notes: |
-  scheme_C pulls from our GT0 lt65 pool (same origin as A1's nulls) and
-  injects at 1:1. The 2x2 A0/A1/A2/A3 is the core of the source x nulls
-  causal table.
+  Built on v4_clean_lt65 (Fisser lt65 chips, our 40 m + IC preprocessing) +
+  29 GT0 lt65 chips from scripts/build_lt65_nulls.py at 1:1 via scheme_C.
+  The 2x2 A0/A1/A2/A3 is the core preprocessing x nulls causal table.
+
+  PREREQUISITE: the v4_clean_lt65_plus_nulls manifest is not yet on disk.
+  Build it by invoking build_lt65_nulls.py on top of v4_clean_lt65 (a
+  follow-up step that merges reference/lt65_nulls_selected.csv into the
+  manifest's training split and recomputes chips_sha).

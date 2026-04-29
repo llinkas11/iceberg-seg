@@ -39,6 +39,7 @@ See `model_progression.md` for the full table with motivations.
 | PR-7 | Shadow class | Merged into iceberg (class 2 -> 1). Model is binary. Shadow merge bridges fragmented icebergs, nearly doubling survivors after 40 m filter. |
 | PR-8 | Fisser test chip evaluability | All 330 Fisser pkl chips have synthetic GeoTIFFs at `data/raw_chips/fisser/<chip_stem>.tif`. eval_methods + eval_per_iceberg load Fisser test chips through the same code path as Roboflow chips. |
 | PR-9 | Augmentation vs class imbalance distinction | Augmentation diversifies *each chip's geometric views*, not *class frequency*. Oversample-only size balancing (scheme_J) addresses gradient-frequency imbalance separately, paired with augmentation. |
+| PR-10 | Preprocessing-pipeline isolation | Audit on Fisser lt65 (2026-04-27): 41,644 of 70,818 components removed by 40 m filter (58.8 %); 312 of 330 chips altered; 129 of 226 training chips IC-masked (57.1 %). Both filters substantially edit Fisser data. Decision: build a `v4_raw` companion (no 40 m, no IC mask, no IC chip-drop) and report a parallel table. A0/A1 anchor on `v4_raw_lt65`; A2-A9 anchor on `v4_clean_lt65`. A0 -> A2 isolates the preprocessing pipeline as a single controlled variable. |
 
 ---
 
@@ -169,20 +170,22 @@ All inference scripts run as `num_classes=1` (binary). Shadow class removed thro
 | `exp_ablation_no_nulls` | baseline_v1 with `data.balancing_scheme: scheme_A_fisser_original` (drops GT0 training chips across all bins). |
 
 ### Phase A (lt65-scoped dataset progression)
-| ID | Dataset | Aug | Class balance | Size balance | YAML |
-|---|---|---|---|---|---|
-| A0 | Fisser lt65, positive-only | off | drop-GT0 | none | `exp_A0_fisser_lt65_original` |
-| A1 | Fisser lt65 + nulls | off | 1:1 GT+/GT0 | undersample | `exp_A1_fisser_lt65_plus_nulls` |
-| A2 | Our lt65, positive-only | off | drop-GT0 | none | `exp_A2_our_lt65` |
-| A3 | Our lt65 + nulls | off | 1:1 GT+/GT0 | none | `exp_A3_our_lt65_plus_nulls` |
-| A4 | A3 + augmentations | on | 1:1 GT+/GT0 | none | `exp_A4_our_lt65_plus_nulls_aug` |
-| A5 | A4 + 2:1 fixed pos-bias | on | 2:1 fixed | none | `exp_A5_our_lt65_plus_nulls_aug_2pos` |
-| A6 | A4 + adaptive 2:1 | on | 2:1 adaptive | none | `exp_A6_our_lt65_plus_nulls_aug_adaptive` |
-| A7 | A4 + size oversample | on | 1:1 GT+/GT0 | oversample (4x cap) | `exp_A7_our_lt65_plus_nulls_aug_size` |
-| A8 | A5 + size oversample | on | 2:1 fixed | oversample (4x cap) | `exp_A8_our_lt65_plus_nulls_aug_2pos_size` |
-| A9 | A6 + size oversample | on | 2:1 adaptive | oversample (4x cap) | `exp_A9_our_lt65_plus_nulls_aug_adaptive_size` |
+| ID | Manifest | Dataset framing | Aug | Class balance | Size balance | YAML |
+|---|---|---|---|---|---|---|
+| A0 | `v4_raw_lt65` | Fisser lt65, Fisser preprocessing (no 40 m, no IC) | off | drop-GT0 | none | `exp_A0_fisser_lt65_original` |
+| A1 | `v4_raw_lt65_plus_nulls` | A0 + nulls | off | 1:1 GT+/GT0 | undersample | `exp_A1_fisser_lt65_plus_nulls` |
+| A2 | `v4_clean_lt65` | Fisser lt65, our preprocessing (40 m + IC) | off | drop-GT0 | none | `exp_A2_our_lt65` |
+| A3 | `v4_clean_lt65_plus_nulls` | A2 + nulls | off | 1:1 GT+/GT0 | none | `exp_A3_our_lt65_plus_nulls` |
+| A4 | `v4_clean_lt65_plus_nulls` | A3 + augmentations | on | 1:1 GT+/GT0 | none | `exp_A4_our_lt65_plus_nulls_aug` |
+| A5 | `v4_clean_lt65_plus_nulls` | A4 + 2:1 fixed pos-bias | on | 2:1 fixed | none | `exp_A5_our_lt65_plus_nulls_aug_2pos` |
+| A6 | `v4_clean_lt65_plus_nulls` | A4 + adaptive 2:1 | on | 2:1 adaptive | none | `exp_A6_our_lt65_plus_nulls_aug_adaptive` |
+| A7 | `v4_clean_lt65_plus_nulls` | A4 + size oversample | on | 1:1 GT+/GT0 | oversample (4x cap) | `exp_A7_our_lt65_plus_nulls_aug_size` |
+| A8 | `v4_clean_lt65_plus_nulls` | A5 + size oversample | on | 2:1 fixed | oversample (4x cap) | `exp_A8_our_lt65_plus_nulls_aug_2pos_size` |
+| A9 | `v4_clean_lt65_plus_nulls` | A6 + size oversample | on | 2:1 adaptive | oversample (4x cap) | `exp_A9_our_lt65_plus_nulls_aug_adaptive_size` |
 
-A4-A9 form a 2x3 grid: {no class balance, fixed pos-bias, adaptive} crossed with {no size balance, oversample}.
+Phase A reads as a chain: **A0 -> A2** isolates the preprocessing pipeline (raw Fisser vs our 40 m + IC), **A2 -> A3** isolates null-chip injection, **A3 -> A4** isolates augmentation, and **A4-A9** form a 2x3 grid: {no class balance, fixed pos-bias, adaptive} crossed with {no size balance, oversample}.
+
+The two `*_plus_nulls` manifests (A1, A3-A9) are not yet on disk; they require the C1 follow-up (refactor `build_lt65_nulls.py` to merge nulls from `reference/lt65_nulls_selected.csv` into a base manifest).
 
 ### Phase B (method sweep on baseline)
 All B experiments share the baseline_v1 trained checkpoint; one training run produces all six method outputs. Each B YAML pins `evaluation.focus_method` so reporting tables read the headline method off the row.
@@ -249,17 +252,12 @@ Chip-level pixel IoU (`eval_summary.csv`) is 0.005-0.013 for every method. That 
 
 ## Open Questions
 
-### Phase A "our lt65" scoping (high priority)
-v4_clean has zero Roboflow-annotated lt65 chips in the training split (every lt65 training chip is Fisser-sourced). A2/A3 as written currently swap nothing meaningful from A0/A1. Three interpretations are open:
-
-- (a) A2/A3 redundant with A0/A1; drop them. Phase A collapses to 8 rows.
-- (b) "Our lt65" means same chips, our preprocessing (40 m + IC filter applied; Fisser's wasn't). Weaker claim but valid.
-- (c) "Our lt65" is a separate iceberg-labeler chip set not yet integrated. Needs new manifest source first.
-
-User direction is required before A2-A9 can produce meaningful results.
-
-### Variant manifests (`fisser_lt65_original`, `fisser_lt65_plus_nulls`, `our_lt65`, `our_lt65_plus_nulls`)
-A0-A9 reference manifests that do not yet exist on disk. Each must be built via `build_clean_dataset.py` with the appropriate balancing scheme, OR via a new manifest-recipe layer. Not blocking Phase B.
+### Variant manifests for Phase A
+Six canonical manifests now exist on disk (see Critical File Paths > Data),
+covering A0 through A9. The two `*_plus_nulls` variants (chips_sha `31516dc0…`
+and `1e21d08f…`) were materialised on 2026-04-27 by `build_lt65_nulls.py
+--merge_into_manifest`, which appends 29 lt65 GT0 chips to a base manifest's
+TRAIN split with val and test pkls copied byte-stable.
 
 ### Missed icebergs (PR-5)
 1,756 missed candidates. Decide whether to re-annotate.
@@ -282,14 +280,19 @@ Listed in `new-plan.txt` as TBD. Deferred.
 | `balancing/scheme_*.yaml` | 12 balancing schemes (A through L). |
 
 ### Data (`iceberg-rework/data/`)
-| File | Purpose |
-|---|---|
-| `v4_clean/manifest.json` | Single dataset identity. `chips_sha = fc4b3b16334f2916...`. |
-| `v4_clean/train_validate_test/` | Materialised pkls. |
-| `v4_clean/split_log.csv` | Per-chip metadata. |
-| `raw_chips/fisser/<chip_stem>.tif` | 330 synthetic GeoTIFFs for Fisser chips. |
-| `v4_test_pools/<bin>/{pos,null}/` | Per-bin test pools for 2:1 sampling. |
-| `v4_clean_lt65_balanced/` | Additive variant: 28 lt65 pos + 29 lt65 null. |
+| File | chips_sha | n | Filters | Purpose |
+|---|---|---|---|---|
+| `v4_clean/manifest.json` | `fc4b3b16…` | 916 | 40 m + IC | Canonical baseline dataset (all bins). |
+| `v4_clean_lt65/manifest.json` | `b26077e1…` | 330 | 40 m + IC | Phase A2 base (lt65 only, our preprocessing). |
+| `v4_clean_lt65_plus_nulls/manifest.json` | `31516dc0…` | 359 | 40 m + IC + 29 nulls | Phase A3-A9 base (training-time GT0 injection). |
+| `v4_raw_lt65/manifest.json` | `2f923c35…` | 398 | none | Phase A0 base (lt65 only, Fisser preprocessing). |
+| `v4_raw_lt65_plus_nulls/manifest.json` | `1e21d08f…` | 427 | none + 29 nulls | Phase A1 base (Fisser preprocessing + nulls). |
+| `v4_raw/manifest.json` | `149b2476…` | 984 | none | Companion baseline, all bins, no filters (parallel paper table). |
+| `v4_clean/train_validate_test/` | | | | Materialised pkls. |
+| `v4_clean/split_log.csv` | | | | Per-chip metadata. |
+| `raw_chips/fisser/<chip_stem>.tif` | | | | Synthetic GeoTIFFs for Fisser chips (398 written; 330 referenced by v4_clean). |
+| `v4_test_pools/<bin>/{pos,null}/` | | | | Per-bin test pools for 2:1 sampling. |
+| `v4_clean_lt65_balanced/` | | | | Additive legacy variant: 28 lt65 pos + 29 lt65 null. Superseded by v4_*_lt65 manifests + the C1 null-merge step. |
 
 ### Reference (`iceberg-rework/reference/`)
 | File | Purpose |
@@ -370,8 +373,16 @@ ssh moosehead 'tail -f /mnt/research/.../iceberg-rework/logs/exp/ice_exp_<job_id
 ## Verified Pipeline State (2026-04-27)
 
 - Repo on github.com/llinkas11/iceberg-seg, latest commit `7f8b100`.
-- v4_clean manifest built. chips_sha = `fc4b3b16334f2916...`.
-- baseline_v1 trained: `runs/exp_baseline_v1/20260424_185158/model/best_model.pth` (104 MB, 100 epochs, val IoU 0.323, test IoU 0.314 pixel-level).
+- Six canonical manifests on disk (chips_sha shown to 16 chars):
+  - `v4_clean`                 : `fc4b3b16334f2916...`, 916 chips, 40 m + IC, all bins.
+  - `v4_clean_lt65`            : `b26077e13fe536e2...`, 330 chips, 40 m + IC, lt65 only.
+  - `v4_clean_lt65_plus_nulls` : `31516dc09828007e...`, 359 chips, 40 m + IC + 29 nulls in train.
+  - `v4_raw_lt65`              : `2f923c35d858ba06...`, 398 chips, no filters, lt65 only.
+  - `v4_raw_lt65_plus_nulls`   : `1e21d08fc96c3d53...`, 427 chips, no filters + 29 nulls in train.
+  - `v4_raw`                   : `149b247671b70880...`, 984 chips, no filters, all bins.
+- `build_clean_dataset.py` regression-tested: rebuilding with no flags reproduces v4_clean's `chips_sha` exactly.
+- baseline_v1 trained: `runs/exp_baseline_v1/20260424_185158/model/best_model.pth` (104 MB, 100 epochs, val IoU 0.323, test IoU 0.314 pixel-level). Trained on v4_clean.
+- All 10 Phase A YAMLs validate on HPC after the manifest_id repointing (A0/A1 -> v4_raw_lt65 / v4_raw_lt65_plus_nulls; A2-A9 -> v4_clean_lt65 / v4_clean_lt65_plus_nulls).
 - All 19 experiment YAMLs validate locally and on HPC.
 - All 12 balancing scheme YAMLs parse.
 - `_fig_registry` exposes `write` and `write_table`. Every paper-bound figure script routes through it.

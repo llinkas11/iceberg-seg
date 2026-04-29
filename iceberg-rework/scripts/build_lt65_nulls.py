@@ -11,9 +11,26 @@ and subsampled KQ:SK proportional to the Fisser GT-positive region distribution
   reference/lt65_nulls_selected.csv    the 29 picks (6 KQ + 23 SK)
   viz/lt65_nulls_qc/contact_sheet.png  29 thumbnails for manual QA
 
-Optional --build_split additionally writes data/v4_clean_lt65_balanced/ by
-copying v3_clean and rebalancing the lt65 test bin to 28 positives + 29 nulls,
-keeping other bins untouched. v3_clean is never modified.
+Two run modes:
+
+  Discovery (default):
+    python build_lt65_nulls.py
+  Scans, selects 29 chips, and writes the candidates / selected CSVs and the QA
+  contact sheet. Idempotent.
+
+  Merge into a base manifest:
+    python build_lt65_nulls.py \
+        --merge_into_manifest data/v4_clean_lt65/manifest.json \
+        --merge_out_dir       data/v4_clean_lt65_plus_nulls \
+        --merge_manifest_id   v4_clean_lt65_plus_nulls
+  Skips the scan; reads the existing lt65_nulls_selected.csv and grafts those
+  29 chips into the base manifest's TRAIN split. Val and test pass through
+  byte-stable; chips_sha is recomputed. Used by Phase A's A1, A3-A9
+  experiments.
+
+Optional --build_split (legacy) writes data/v4_clean_lt65_balanced/ by copying
+v3_clean and rebalancing the lt65 TEST bin to 28 positives + 29 nulls. Kept
+for back-compat; superseded by --merge_into_manifest for Phase A purposes.
 
 Quality gates (all must pass):
   1. Cloud: QA60 (opaque|cirrus) fraction < 1% within chip bounds.
@@ -23,20 +40,19 @@ Quality gates (all must pass):
 
 Sea ice, cloud-edge, land, and open water all pass provided gates 1-3 hold.
 
-Usage:
-  python build_lt65_nulls.py                      # scan + select + contact sheet
-  python build_lt65_nulls.py --build_split        # also write v4 split
-
 rsync:
   rsync -av /Users/llinkas/Library/CloudStorage/OneDrive-BowdoinCollege/Desktop/IDS2026/iceberg-rework/scripts/build_lt65_nulls.py llinkas@moosehead.bowdoin.edu:/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/scripts/
 """
 
 import argparse
+import csv
 import functools
+import json
 import os
 import pickle
 import shutil
 from collections import Counter
+from datetime import datetime, timezone
 
 import matplotlib
 matplotlib.use("Agg")
@@ -47,14 +63,31 @@ import rasterio as rio
 from scipy.ndimage import label as cc_label
 from skimage.filters import threshold_otsu
 
-from _method_common import SKIP_TOO_FEW_BANDS
-from build_clean_dataset import B08_THRESHOLD, CHIP_SIZE, IC_THRESHOLD
-from cloud_filter_roboflow import (
-    find_qa60_entry,
-    get_cloud_fraction,
-    parse_chip_name,
+from _method_common import SKIP_TOO_FEW_BANDS, get_git_sha, sha256_of_file
+from build_clean_dataset import (
+    B08_THRESHOLD,
+    CHIP_SIZE,
+    IC_THRESHOLD,
+    compute_chips_sha,
+    summarise_splits,
 )
-from otsu_threshold_tifs import make_false_color, percentile_stretch  # noqa: F401
+
+# cloud_filter_roboflow pulls in `requests`, which isn't always installed in the
+# inference venv. Merge mode never touches it; defer the import to the
+# discovery code path so the merge CLI works on any env that has rasterio +
+# pandas + numpy.
+def _import_discovery_deps():
+    global find_qa60_entry, get_cloud_fraction, parse_chip_name
+    global make_false_color, percentile_stretch
+    from cloud_filter_roboflow import (  # noqa: F401
+        find_qa60_entry,
+        get_cloud_fraction,
+        parse_chip_name,
+    )
+    from otsu_threshold_tifs import (  # noqa: F401
+        make_false_color,
+        percentile_stretch,
+    )
 
 
 # 1. Constants
@@ -338,6 +371,146 @@ def build_v4_split(v3_dir, v4_dir, selected_df, seed=SEED):
     }
 
 
+# 6.5 Merge nulls into a base manifest (training-time injection)
+def merge_nulls_into_manifest(base_manifest_path, out_dir, manifest_id,
+                              selected_df):
+    """
+    Append lt65 GT0 chips to the TRAIN split of a base manifest.
+
+    Pkls: X_train/Y_train get the new null chips concatenated at the end;
+    val and test pkls are copied byte-stable. split_log.csv and manifest.json
+    are written from scratch with chips_sha recomputed.
+
+    Args:
+        base_manifest_path: Path to manifest.json built by build_clean_dataset.
+        out_dir: Destination directory; pkls / split_log / manifest written here.
+        manifest_id: String to record as manifest_id in the new manifest.
+        selected_df: DataFrame from reference/lt65_nulls_selected.csv with
+            columns tif_path, stem, region, row, col, ic_frac.
+
+    Returns:
+        (out_manifest_path, chips_sha) where chips_sha is the new manifest's
+        full hex digest (caller may want the prefix for logs).
+
+    Side effects:
+        Writes <out_dir>/manifest.json, <out_dir>/split_log.csv, and six pkls
+        under <out_dir>/train_validate_test/. Creates directories as needed.
+
+    Used by Phase A experiments A1, A3-A9 which need GT0 chips in training.
+    Differs from build_v4_split: that function rebalances v3's lt65 TEST bin.
+    """
+
+    # 1. Load base manifest and (only) the train pkls
+    with open(base_manifest_path) as f:
+        base = json.load(f)
+    base_dir = os.path.dirname(os.path.abspath(base_manifest_path))
+    tvt = os.path.join(base_dir, "train_validate_test")
+
+    with open(os.path.join(tvt, "X_train.pkl"), "rb") as f:
+        x_train = pickle.load(f)
+    with open(os.path.join(tvt, "Y_train.pkl"), "rb") as f:
+        y_train = pickle.load(f)
+
+    # 2. Materialise null arrays (X from raw S2 tifs, Y all zeros)
+    n_nulls = len(selected_df)
+    null_x = np.zeros((n_nulls, 3, CHIP_SIZE, CHIP_SIZE), dtype=np.float32)
+    null_y = np.zeros((n_nulls, 1, CHIP_SIZE, CHIP_SIZE), dtype=np.int64)
+    null_chip_records = []
+    train_chips = [c for c in base["chips"] if c["split"] == "train"]
+    n_train_base = len(train_chips)
+
+    for i, (_, r) in enumerate(selected_df.iterrows()):
+        with rio.open(r.tif_path) as src:
+            null_x[i] = src.read([1, 2, 3]).astype(np.float32)
+        chip_stem = f"{r.stem}_r{int(r.row):04d}_c{int(r.col):04d}"
+        null_chip_records.append({
+            "chip_stem":    chip_stem,
+            "stem":         null_stem(r.region, r.stem, r.row, r.col),
+            "source":       OUR_LT65_NULL_SOURCE,
+            "sza_bin":      SZA_LT65,
+            "tif_path":     r.tif_path,
+            "tif_sha":      sha256_of_file(r.tif_path),
+            "n_icebergs":   0,
+            "has_iceberg":  False,
+            "ic_aware":     float(r.ic_frac),
+            "wind_ms":      "",
+            "temp_c":       "",
+            "split":        "train",
+            "pkl_position": n_train_base + i,
+        })
+
+    # 3. Rewrite train pkls with appended nulls; val/test copied byte-stable.
+    # shutil.copy beats load-then-pickle: avoids a ~400 MB round-trip in RAM
+    # per merge and preserves the base pkl mtime as a provenance hint.
+    out_tvt = os.path.join(out_dir, "train_validate_test")
+    os.makedirs(out_tvt, exist_ok=True)
+
+    x_train_new = np.concatenate([x_train, null_x], axis=0)
+    y_train_new = np.concatenate([y_train, null_y], axis=0)
+    with open(os.path.join(out_tvt, "X_train.pkl"), "wb") as f:
+        pickle.dump(x_train_new, f)
+    with open(os.path.join(out_tvt, "Y_train.pkl"), "wb") as f:
+        pickle.dump(y_train_new, f)
+    for name in ("X_validation.pkl", "Y_validation.pkl", "x_test.pkl", "y_test.pkl"):
+        shutil.copy(os.path.join(tvt, name), os.path.join(out_tvt, name))
+
+    # 4. Compose new chip list: base train + nulls + base val + base test
+    val_chips = [c for c in base["chips"] if c["split"] == "val"]
+    test_chips = [c for c in base["chips"] if c["split"] == "test"]
+    new_chips = train_chips + null_chip_records + val_chips + test_chips
+
+    # 5. Write split_log.csv
+    log_path = os.path.join(out_dir, "split_log.csv")
+    fieldnames = [
+        "split", "pkl_position", "stem", "chip_stem", "tif_path", "sza_bin",
+        "source", "n_icebergs", "ic_aware", "ic_masked", "wind_ms", "temp_c",
+    ]
+    with open(log_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for c in new_chips:
+            writer.writerow({
+                "split":        c["split"],
+                "pkl_position": c["pkl_position"],
+                "stem":         c.get("stem", ""),
+                "chip_stem":    c["chip_stem"],
+                "tif_path":     c.get("tif_path", ""),
+                "sza_bin":      c["sza_bin"],
+                "source":       c["source"],
+                "n_icebergs":   c["n_icebergs"],
+                "ic_aware":     f"{float(c.get('ic_aware', 0)):.4f}",
+                "ic_masked":    "False",  # nulls never IC-masked; base IC state preserved by source
+                "wind_ms":      c.get("wind_ms", ""),
+                "temp_c":       c.get("temp_c", ""),
+            })
+
+    # 6. Write manifest.json with recomputed chips_sha
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    chips_sha = compute_chips_sha(new_chips)
+    manifest = {
+        "manifest_id":      manifest_id,
+        "created_utc":      datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "script":           os.path.basename(__file__),
+        "git_sha":          get_git_sha(repo_dir),
+        "chip_source":      base.get("chip_source", ""),
+        "split_policy":     base.get("split_policy", {}),
+        "filters":          dict(base.get("filters", {}), nulls_merged=True),
+        "base_manifest_id": base["manifest_id"],
+        "base_chips_sha":   base["chips_sha"],
+        "n_added_nulls":    n_nulls,
+        "total_chips":      len(new_chips),
+        "counts_by_split":  summarise_splits(new_chips),
+        "chips":            new_chips,
+        "chips_sha":        chips_sha,
+    }
+
+    out_manifest = os.path.join(out_dir, "manifest.json")
+    with open(out_manifest, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    return out_manifest, chips_sha
+
+
 @functools.lru_cache(maxsize=1)
 def _provenance_idx_to_region():
     prov = pd.read_csv(PROVENANCE_CSV)
@@ -361,7 +534,7 @@ def _renumber_pkl_positions(split_df):
 
 # 7. Main
 def main():
-    parser = argparse.ArgumentParser(description="Build sza_lt65 null test chips")
+    parser = argparse.ArgumentParser(description="Build sza_lt65 null chips and merge into a base manifest")
     parser.add_argument("--chips_dir",
         default="/mnt/research/v.gomezgilyaspik/students/smishra/S2-iceberg-areas/chips")
     parser.add_argument("--downloads_dir",
@@ -373,15 +546,50 @@ def main():
     parser.add_argument("--v4_dir",
         default="/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/data/v4_clean_lt65_balanced")
     parser.add_argument("--build_split", action="store_true",
-        help="After selecting nulls, also write v4_clean_lt65_balanced")
+        help="(legacy) After selecting nulls, also write v4_clean_lt65_balanced (v3-based test-time injection).")
+    parser.add_argument("--merge_into_manifest", default=None,
+        help="Path to a base manifest.json. If set, skips discovery and grafts the 29 lt65 nulls "
+             "from --nulls_csv into the base manifest's TRAIN split, writing a new manifest at "
+             "--merge_out_dir.")
+    parser.add_argument("--merge_out_dir", default=None,
+        help="Output directory for the merged manifest. Required if --merge_into_manifest is set.")
+    parser.add_argument("--merge_manifest_id", default=None,
+        help="manifest_id to record in the merged manifest. Required if --merge_into_manifest is set.")
+    parser.add_argument("--nulls_csv", default=None,
+        help="Path to lt65_nulls_selected.csv. Defaults to reference/lt65_nulls_selected.csv "
+             "under --out_dir.")
     args = parser.parse_args()
 
-    # 7a. Build the SAFE-zip index once
+    # 7a. Merge-only mode: skip discovery, use existing CSV
+    if args.merge_into_manifest is not None:
+        if args.merge_out_dir is None or args.merge_manifest_id is None:
+            parser.error("--merge_into_manifest requires --merge_out_dir and --merge_manifest_id")
+        nulls_csv = args.nulls_csv or os.path.join(
+            args.out_dir, "reference/lt65_nulls_selected.csv"
+        )
+        if not os.path.exists(nulls_csv):
+            parser.error(f"nulls CSV not found: {nulls_csv}. Run discovery first (no --merge flags).")
+        selected = pd.read_csv(nulls_csv)
+        print(f"merging {len(selected)} nulls into {args.merge_into_manifest}")
+        out_manifest, chips_sha = merge_nulls_into_manifest(
+            args.merge_into_manifest,
+            args.merge_out_dir,
+            args.merge_manifest_id,
+            selected,
+        )
+        print(f"  manifest : {out_manifest}")
+        print(f"  chips_sha: {chips_sha[:16]}...")
+        return
+
+    # 7b. Discovery mode: full scan + select + (optional) v3-based v4 build
+    _import_discovery_deps()
+
+    # Build the SAFE-zip index once
     print(f"indexing SAFE zips under {args.downloads_dir} ...")
     zip_index = build_zip_index(args.downloads_dir)
     print(f"  indexed {len(zip_index)} SAFE zips")
 
-    # 7b. Scan
+    # Scan
     rows = []
     for region in REGIONS:
         print(f"scanning {region}/{SZA_LT65}/tifs ...")
@@ -391,7 +599,7 @@ def main():
                 print(f"  {region}: {i + 1} chips scanned", flush=True)
     df = pd.DataFrame(rows)
 
-    # 7c. Persist every scan row
+    # Persist every scan row
     cand_path = os.path.join(args.out_dir, "reference/lt65_null_candidates.csv")
     os.makedirs(os.path.dirname(cand_path), exist_ok=True)
     df.to_csv(cand_path, index=False)
@@ -403,21 +611,21 @@ def main():
         if key[1]:
             print(f"  {key}: {n}")
 
-    # 7d. Select 29 nulls
+    # Select 29 nulls
     selected = pick_nulls(df)
     sel_path = os.path.join(args.out_dir, "reference/lt65_nulls_selected.csv")
     selected.to_csv(sel_path, index=False)
     print(f"\nselected {len(selected)} null chips:")
     print(selected.groupby("region").size().to_string())
 
-    # 7e. Contact sheet
+    # Contact sheet
     qc_path = os.path.join(args.out_dir, "viz/lt65_nulls_qc/contact_sheet.png")
     write_contact_sheet(selected, qc_path)
     print(f"\ncontact sheet: {qc_path}")
     print(f"candidates CSV: {cand_path}")
     print(f"selected CSV:   {sel_path}")
 
-    # 7f. v4 split (optional)
+    # Legacy v4 test-time split (optional)
     if args.build_split:
         print(f"\nbuilding v4 split at {args.v4_dir} ...")
         stats = build_v4_split(args.v3_dir, args.v4_dir, selected)
