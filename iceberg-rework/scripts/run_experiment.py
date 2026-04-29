@@ -1,9 +1,12 @@
 """
-run_experiment.py: drive one experiment through the five pipeline stages.
+run_experiment.py: drive one experiment through the six pipeline stages.
 
 Stages:
   manifest   ensure the data manifest named in the experiment config exists
              (builds it via build_clean_dataset.py if missing)
+  balance    apply the experiment's balancing_scheme to the manifest's train
+             pkls; writes balanced/ next to the run dir. Skipped for schemes
+             that are no-ops (drop-GT0 on already-positive-only manifests).
   train      run train.py with ICEBERG_EXPERIMENT=1 so the seed guard fires
   infer      run run_methods.sh on the trained checkpoint + manifest
   evaluate   run eval_methods.py with --manifest and --skipped_chip_policy
@@ -14,13 +17,14 @@ chips_sha into its outputs so cross-experiment comparison can join them.
 
 Usage:
     python scripts/run_experiment.py --exp exp_07_method_otsu
-    python scripts/run_experiment.py --exp exp_07_method_otsu --stages manifest,evaluate
+    python scripts/run_experiment.py --exp exp_07_method_otsu --stages manifest,balance,train
 """
 
 import argparse
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -39,7 +43,24 @@ SCRIPTS_DIR = os.path.join(REPO_DIR, "scripts")
 DEFAULT_PY  = os.environ.get("PY", "/home/llinkas/.venvs/iceberg-unet312/bin/python")
 if not os.path.exists(DEFAULT_PY):
     DEFAULT_PY = sys.executable
-STAGE_ORDER = ["manifest", "train", "infer", "evaluate", "figures"]
+STAGE_ORDER = ["manifest", "balance", "train", "infer", "evaluate", "figures"]
+
+
+# Scheme -> balance_training.py flags. Keys map to scheme YAML ids.
+# A "no-op" scheme either has no rebalancing rules (E_natural) or trivially
+# matches the manifest already (A on positive-only manifests). These skip the
+# balance stage entirely; train.py reads the manifest's pkls unchanged.
+SCHEME_FLAGS = {
+    "scheme_A_fisser_original":             None,
+    "scheme_E_natural":                     None,
+    "scheme_B_fisser_plus_nulls":           ["--ratio", "1.0"],
+    "scheme_C_our_lt65_plus_nulls":         ["--ratio", "1.0"],
+    "scheme_D_two_pos_per_null":            ["--ratio", "2.0"],
+    "scheme_I_two_to_one_adaptive":         ["--ratio", "2.0"],
+    "scheme_J_oversample_size_balanced":    ["--balance_positive_area_bins", "--oversample_only"],
+    "scheme_K_two_pos_per_null_size_balanced": ["--ratio", "2.0", "--balance_positive_area_bins", "--oversample_only"],
+    "scheme_L_adaptive_size_balanced":      ["--ratio", "2.0", "--balance_positive_area_bins", "--oversample_only"],
+}
 
 
 def run(cmd, env=None):
@@ -80,10 +101,58 @@ def stage_manifest(cfg, run_dir):
     return manifest_path
 
 
+def stage_balance(cfg, run_dir, manifest_path):
+    """
+    Apply the experiment's balancing_scheme to the manifest's train pkls.
+
+    Produces <run_dir>/balanced/train_validate_test/ with rewritten X_train.pkl
+    and Y_train.pkl. Val and test pkls are copied byte-stable so the eval set
+    stays identical across schemes. The manifest.json is also copied so train.py
+    can find it via --data_dir.
+
+    Returns the path to manifest.json inside the balanced dir, or the original
+    manifest_path when the scheme is a no-op.
+    """
+    scheme = cfg["data"].get("balancing_scheme")
+    if not scheme:
+        print(f"[balance] no balancing_scheme set; skipping")
+        return manifest_path
+
+    flags = SCHEME_FLAGS.get(scheme)
+    if flags is None:
+        print(f"[balance] {scheme}: no-op (kept manifest pkls as-is)")
+        return manifest_path
+
+    src_dir = os.path.dirname(manifest_path)
+    out_dir = os.path.join(run_dir, "balanced")
+    out_split = os.path.join(out_dir, "train_validate_test")
+    os.makedirs(out_split, exist_ok=True)
+
+    # Run balance_training.py to rewrite X_train.pkl + Y_train.pkl into out_dir.
+    cmd = [
+        DEFAULT_PY, os.path.join(SCRIPTS_DIR, "balance_training.py"),
+        "--clean_dir", src_dir,
+        "--out_dir",   out_dir,
+        "--seed",      str(cfg["training"]["seed"]),
+    ] + flags
+    run(cmd)
+
+    # Carry val + test pkls + the manifest unchanged so train.py + downstream
+    # stages can resolve everything from <run_dir>/balanced/manifest.json.
+    for name in ("X_validation.pkl", "Y_validation.pkl", "x_test.pkl", "y_test.pkl"):
+        src = os.path.join(src_dir, "train_validate_test", name)
+        dst = os.path.join(out_split, name)
+        if not os.path.exists(dst):
+            shutil.copy(src, dst)
+    shutil.copy(manifest_path, os.path.join(out_dir, "manifest.json"))
+    return os.path.join(out_dir, "manifest.json")
+
+
 def stage_train(cfg, run_dir, manifest_path):
     """
     Train a model under ICEBERG_EXPERIMENT=1 so the seed guard fires.
-    Output goes to run_dir/model/.
+    Output goes to run_dir/model/. data_dir comes from manifest_path's parent
+    which may be the balanced/ dir from stage_balance.
     """
     out_dir  = os.path.join(run_dir, "model")
     os.makedirs(out_dir, exist_ok=True)
@@ -191,18 +260,28 @@ def main():
         if s not in STAGE_ORDER:
             raise SystemExit(f"unknown stage: {s}; valid: {STAGE_ORDER}")
 
-    manifest_path = None
-    checkpoint    = None
-    infer_dir     = None
-    eval_dir      = None
+    manifest_path  = None
+    train_manifest = None
+    checkpoint     = None
+    infer_dir      = None
+    eval_dir       = None
     for s in stages:
         print(f"\n=== stage: {s} ===")
         if s == "manifest":
             manifest_path = stage_manifest(merged, run_dir)
+        elif s == "balance":
+            if manifest_path is None:
+                manifest_path = stage_manifest(merged, run_dir)
+            train_manifest = stage_balance(merged, run_dir, manifest_path)
         elif s == "train":
             if manifest_path is None:
                 manifest_path = stage_manifest(merged, run_dir)
-            checkpoint = stage_train(merged, run_dir, manifest_path)
+            # Use the balanced manifest if stage_balance ran; else fall back to
+            # the canonical manifest. Allows re-running train without re-balancing.
+            if train_manifest is None:
+                balanced_manifest = os.path.join(run_dir, "balanced", "manifest.json")
+                train_manifest = balanced_manifest if os.path.exists(balanced_manifest) else manifest_path
+            checkpoint = stage_train(merged, run_dir, train_manifest)
         elif s == "infer":
             if manifest_path is None:
                 manifest_path = stage_manifest(merged, run_dir)
