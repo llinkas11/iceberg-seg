@@ -1,6 +1,6 @@
 # Sentinel-2 Iceberg Segmentation across SZA bins
 
-Lulu Linkas and Shibali Mishra, Independent Study, Bowdoin College, Spring 2026.
+Louisa Linkas and Shibali Mishra, Independent Study, Bowdoin College, Spring 2026.
 
 Segmentation of icebergs in Sentinel-2 L1C imagery across four solar zenith angle (SZA) bins in Kangerlussuaq (KQ) and Sermilik (SK) fjords on the east coast of Greenland. Compares six retrieval methods (TR, OT, UNet++, UNet+TR, UNet+OT, UNet+CRF) on a single shared dataset and reports Fisser-comparable per-pair MAE on iceberg area.
 
