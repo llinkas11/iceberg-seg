@@ -88,8 +88,46 @@ For each stage independently:
 
 **Build / verify the dataset manifest:**
 ```
-python scripts/build_clean_dataset.py    # writes data/v4_clean/manifest.json + pkls
+# Canonical: 916 chips, 40 m + IC, all bins
+python scripts/build_clean_dataset.py
+# -> data/v4_clean/manifest.json (chips_sha = fc4b3b16334f2916...)
+
+# Companion (no preprocessing): 984 chips, no 40 m, no IC mask, all bins
+python scripts/build_clean_dataset.py \
+    --skip_size_filter --skip_ic_mask \
+    --out_dir data/v4_raw --manifest_id v4_raw
+# -> data/v4_raw/manifest.json (chips_sha = 149b247671b70880...)
+
+# lt65 subset of v4_clean (Phase A2 base)
+python scripts/build_clean_dataset.py \
+    --filter_sza_bin sza_lt65 \
+    --out_dir data/v4_clean_lt65 --manifest_id v4_clean_lt65
+# -> chips_sha = b26077e13fe536e2...
+
+# lt65 subset of v4_raw (Phase A0 base)
+python scripts/build_clean_dataset.py \
+    --skip_size_filter --skip_ic_mask --filter_sza_bin sza_lt65 \
+    --out_dir data/v4_raw_lt65 --manifest_id v4_raw_lt65
+# -> chips_sha = 2f923c35d858ba06...
+
+# Graft 29 lt65 GT0 chips into a base manifest's TRAIN split
+# (val + test pkls copied byte-stable; chips_sha recomputed)
+python scripts/build_lt65_nulls.py \
+    --merge_into_manifest data/v4_clean_lt65/manifest.json \
+    --merge_out_dir       data/v4_clean_lt65_plus_nulls \
+    --merge_manifest_id   v4_clean_lt65_plus_nulls
+# -> chips_sha = 31516dc09828007e...
+
+python scripts/build_lt65_nulls.py \
+    --merge_into_manifest data/v4_raw_lt65/manifest.json \
+    --merge_out_dir       data/v4_raw_lt65_plus_nulls \
+    --merge_manifest_id   v4_raw_lt65_plus_nulls
+# -> chips_sha = 1e21d08fc96c3d53...
 ```
+
+Six canonical manifests result. Phase A0/A1 anchor on `v4_raw_lt65*`; A2-A9
+anchor on `v4_clean_lt65*`. The `v4_raw` companion backs the parallel paper
+table that isolates the preprocessing pipeline.
 
 **Train UNet++ (binary, seed-required under ICEBERG_EXPERIMENT=1):**
 ```

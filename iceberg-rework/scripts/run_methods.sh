@@ -36,13 +36,15 @@ MANIFEST=""
 CHECKPOINT=""
 OUT_BASE=""
 BIN=""
+PROB_THRESHOLD=""   # forwarded to threshold_probs.py; if empty, script default applies
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --manifest)   MANIFEST="$2";   shift 2 ;;
-        --checkpoint) CHECKPOINT="$2"; shift 2 ;;
-        --out_base)   OUT_BASE="$2";   shift 2 ;;
-        --bin)        BIN="$2";        shift 2 ;;
+        --manifest)        MANIFEST="$2";        shift 2 ;;
+        --checkpoint)      CHECKPOINT="$2";      shift 2 ;;
+        --out_base)        OUT_BASE="$2";        shift 2 ;;
+        --bin)             BIN="$2";             shift 2 ;;
+        --prob_threshold)  PROB_THRESHOLD="$2";  shift 2 ;;
         -h|--help)
             sed -n '2,30p' "$0"
             exit 0
@@ -164,9 +166,11 @@ for B in "${BINS[@]}"; do
 
     PROBS="$OUT/UNet/probs"
     echo "[4/6] UNet_TR"
-    "$PY" "$SCRIPTS/threshold_probs.py" \
-        --probs_dir "$PROBS" \
-        --out_dir   "$OUT/UNet_TR"
+    UNET_TR_ARGS=(--probs_dir "$PROBS" --out_dir "$OUT/UNet_TR")
+    if [[ -n "$PROB_THRESHOLD" ]]; then
+        UNET_TR_ARGS+=(--threshold "$PROB_THRESHOLD")
+    fi
+    "$PY" "$SCRIPTS/threshold_probs.py" "${UNET_TR_ARGS[@]}"
 
     echo "[5/6] UNet_OT"
     "$PY" "$SCRIPTS/otsu_probs.py" \

@@ -380,7 +380,7 @@ ssh moosehead 'tail -f /mnt/research/.../iceberg-rework/logs/exp/ice_exp_<job_id
   - `v4_raw_lt65`              : `2f923c35d858ba06...`, 398 chips, no filters, lt65 only.
   - `v4_raw_lt65_plus_nulls`   : `1e21d08fc96c3d53...`, 427 chips, no filters + 29 nulls in train.
   - `v4_raw`                   : `149b247671b70880...`, 984 chips, no filters, all bins.
-- `build_clean_dataset.py` regression-tested: rebuilding with no flags reproduces v4_clean's `chips_sha` exactly.
+- `build_clean_dataset.py` regression-tested 2026-04-28: rebuilding with no flags reproduces v4_clean's `chips_sha = fc4b3b16334f2916...` exactly. Same 551/137/228 split, 193 IC-masked chips. Confirms the new flag-gated branches (IC-skip, SZA-early-filter, idempotent shadow merge) leave the canonical build byte-stable.
 - baseline_v1 trained: `runs/exp_baseline_v1/20260424_185158/model/best_model.pth` (104 MB, 100 epochs, val IoU 0.323, test IoU 0.314 pixel-level). Trained on v4_clean.
 - All 10 Phase A YAMLs validate on HPC after the manifest_id repointing (A0/A1 -> v4_raw_lt65 / v4_raw_lt65_plus_nulls; A2-A9 -> v4_clean_lt65 / v4_clean_lt65_plus_nulls).
 - All 19 experiment YAMLs validate locally and on HPC.

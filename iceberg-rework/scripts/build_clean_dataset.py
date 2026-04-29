@@ -1,23 +1,39 @@
 """
-build_clean_dataset.py: Merge filtered Fisser + Roboflow data into new pkl split.
+build_clean_dataset.py: Merge Fisser + Roboflow data into a versioned pkl split.
 
-Applies all upstream filters:
-  - Shadow (class 2) merged into iceberg (class 1): binary masks
-  - 40 m root-length cutoff (from filter_small_icebergs.py)
-  - IC >= 15% removal for Fisser (from filter_quality.py)
-  - Met data flagging (informational, no removal by default)
+Default pipeline (canonical v4_clean):
+  - Shadow (class 2) merged into iceberg (class 1): binary masks.
+  - 40 m root-length cutoff (sources from filter_small_icebergs.py output).
+  - IC chip-drop and IC pixel-mask in training (sources from filter_quality.py).
+  - Met data attached as informational fields (no chip removal).
 
-Produces a new 65/15/25 train/val/test split stratified by SZA bin.
-Output masks are binary: 0=background, 1=iceberg (shadow merged).
+Three flags toggle preprocessing for the v4_raw companion + Phase A subsets:
+  --skip_size_filter   Use raw COCO + raw Fisser pkls (no 40 m cutoff).
+  --skip_ic_mask       Disable Fisser IC chip-drop AND training-time IC mask.
+  --filter_sza_bin BIN Restrict the manifest to one SZA bin (sza_lt65, etc.).
 
-Also writes a manifest.json to --out_dir. The manifest lists every chip, its
-SHA, and its split assignment, plus a single chips_sha that downstream tools
-use as dataset identity. Any experiment run against this dataset stamps the
-chips_sha into its output CSVs.
+Six canonical manifests are produced by combining these flags:
+  v4_clean             (no flags)
+  v4_clean_lt65        (--filter_sza_bin sza_lt65)
+  v4_raw_lt65          (--skip_size_filter --skip_ic_mask --filter_sza_bin sza_lt65)
+  v4_raw               (--skip_size_filter --skip_ic_mask)
+  v4_clean_lt65_plus_nulls / v4_raw_lt65_plus_nulls
+                       (built by build_lt65_nulls.py --merge_into_manifest)
+
+Outputs (per --out_dir):
+  manifest.json         Single dataset identity. Includes chips_sha; downstream
+                        runs stamp this into eval CSVs.
+  split_log.csv         Per-chip metadata (split, pkl_position, ic_masked, met).
+  train_validate_test/  X_train.pkl, Y_train.pkl, X_validation.pkl,
+                        Y_validation.pkl, x_test.pkl, y_test.pkl.
+
+Output masks are binary: 0 = background, 1 = iceberg. Stratified 65/15/25
+train/val/test split (test capped at 57 per SZA bin for cross-bin balance).
 
 Usage:
-  python scripts/build_clean_dataset.py
-  python scripts/build_clean_dataset.py --train_frac 0.65 --val_frac 0.15 --test_frac 0.25
+  python scripts/build_clean_dataset.py                       # canonical v4_clean
+  python scripts/build_clean_dataset.py --filter_sza_bin sza_lt65 \
+      --out_dir data/v4_clean_lt65 --manifest_id v4_clean_lt65
 """
 
 import argparse

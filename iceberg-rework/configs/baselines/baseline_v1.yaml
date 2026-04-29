@@ -100,7 +100,12 @@ methods:
   UNet:
     threshold: 0.5
   UNet_TR:
-    prob_threshold: 0.5
+    # 0.22 keeps UNet_TR distinct from UNet (argmax = sigmoid >= 0.5). Documented
+    # as Fisser's NIR-threshold convention reused on softmax space; this is the
+    # operational value used by the canonical baseline_v1 run. Prior YAML
+    # declared 0.5 but the runner silently used the script default 0.22; YAML
+    # now matches reality. See plan.md PR-11.
+    prob_threshold: 0.22
   UNet_OT:
     otsu_floor_prob: 0.10
     otsu_ceil_prob:  0.90
