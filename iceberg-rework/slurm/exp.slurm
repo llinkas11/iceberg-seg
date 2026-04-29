@@ -10,7 +10,7 @@
 #   sbatch --export=EXP_ID=exp_B2_method_unet slurm/exp.slurm
 #
 # Optional env vars:
-#   STAGES   comma-separated stages (default: manifest,train,infer,evaluate)
+#   STAGES   comma-separated stages (default: manifest,balance,train,infer,evaluate)
 #   SEED     training seed (default 42; set in baseline_v1.yaml)
 #
 # Logs land at logs/<EXP_ID>/<job_name>_<job_id>.{out,err}.
@@ -41,7 +41,7 @@ if [[ ! -f "${EXP_YAML}" ]]; then
     exit 2
 fi
 
-STAGES="${STAGES:-manifest,train,infer,evaluate}"
+STAGES="${STAGES:-manifest,balance,train,infer,evaluate}"
 mkdir -p "${ROOT}/logs/exp" "${ROOT}/runs/${EXP_ID}"
 
 echo "Experiment: ${EXP_ID}"
