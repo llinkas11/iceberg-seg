@@ -187,6 +187,11 @@ def stage_infer(cfg, run_dir, manifest_path, checkpoint):
         "--checkpoint", checkpoint,
         "--out_base",   out_base,
     ]
+    # Pass UNet_TR's prob_threshold from the merged YAML so the runner does
+    # not silently fall back to threshold_probs.py's hardcoded default.
+    prob_thresh = cfg.get("methods", {}).get("UNet_TR", {}).get("prob_threshold")
+    if prob_thresh is not None:
+        cmd += ["--prob_threshold", str(prob_thresh)]
     run(cmd)
     return out_base
 
