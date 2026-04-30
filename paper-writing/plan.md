@@ -203,6 +203,28 @@ All B experiments share the baseline_v1 trained checkpoint; one training run pro
 
 ---
 
+## Phase A Leaderboard (2026-04-30)
+
+All ten Phase A experiments trained and evaluated. Byte-identical hyperparameters across all runs (resnet34, 100 epochs, lr=1e-4, batch=16, seed=42). Sorted by best val IoU.
+
+| ID | manifest | val IoU | test IoU | UNet match rate | UNet RL MAE (m) | comment |
+|---|---|---|---|---|---|---|
+| **A0** | `v4_raw_lt65` (Fisser preproc, no nulls) | **0.613** | **0.577** | **0.512** | **9.82** | Phase A winner. |
+| A1 | `v4_raw_lt65_plus_nulls` | 0.503 | 0.477 | 0.315 | 15.21 | -0.11 IoU vs A0 from null injection. |
+| A3 | `v4_clean_lt65_plus_nulls` | 0.269 | 0.336 | 0.182 | 15.69 | |
+| A2 | `v4_clean_lt65` | 0.261 | 0.344 | 0.245 | 15.26 | -0.35 IoU vs A0 from preprocessing. |
+| A7=A8=A9 | size oversample (J/K/L) | 0.243 | 0.320 | 0.163 | 14.78 | Identical training set on this manifest. |
+| A5=A6 | class balance (D/I) | 0.237 | 0.312 | 0.158 | 15.23 | Identical training set on this manifest. |
+| A4 | `v4_clean_lt65_plus_nulls` (no balance) | 0.225 | 0.274 | 0.122 | 14.93 | Lowest val IoU. |
+
+Empirical 2x3 collapse: A5 == A6 (D and I equivalent on GT+-majority data) and A7 == A8 == A9 (size oversample saturates at the same equilibrium under 4x cap). Phase A's 2x3 grid is empirically a 1x3 progression on `v4_clean_lt65_plus_nulls`.
+
+A0 wins, A0 vs A2 isolates the preprocessing pipeline as the dominant Phase A axis, and A2-A9 plateau at ~0.24-0.27 IoU. Phase A balancing-grid sweep confirms PR-12: once preprocessing has degraded calibration, no balancing scheme recovers it.
+
+Phase B uses the **canonical baseline_v1** checkpoint (all four SZA bins) rather than A0; A0 is best on lt65 alone but does not generalise.
+
+---
+
 ## Baseline_v1 Trained Run
 
 Job 56554 completed 2026-04-24 at `runs/exp_baseline_v1/20260424_185158/`.
@@ -337,6 +359,7 @@ Listed in `new-plan.txt` as TBD. Deferred.
 | `plan.md` | This file. Project state. |
 | `methods_draft.md` | Methods-section draft. |
 | `model_progression.md` | Phase A 2x3 grid + Phase B method sweep. |
+| `results.md` | Results-section draft (Phase A leaderboard, preprocessing impact, Phase B per-method per-bin headlines). Source-of-truth tables for `main.tex`. |
 | `iceberg-rework-README.md` | Project README with folder layout + tables. |
 | `refactor_plan.md` | 12-section repository design + audit. |
 | `reference/descriptive_stats_results_discussion.md` | Dataset stats narrative. |

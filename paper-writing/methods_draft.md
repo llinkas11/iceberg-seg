@@ -5,12 +5,24 @@ LaTeX. This file is the prose layer; the v4_clean pipeline, manifest schema,
 and progression-driven experimental design live in the code at
 `/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/`.
 
-Last updated: 2026-04-27 (v4_clean dataset, binary segmentation, six-method
+Last updated: 2026-04-30 (v4_clean dataset, binary segmentation, six-method
 sweep, Hungarian per-pair evaluator, Fisser-comparable RE, oversample-only
-size balancing for the Phase A 2x3 grid).
+size balancing for the Phase A 2x3 grid, plus explicit scope notes for
+methodological branches introduced in planning but not executed).
 -->
 
 # Methods
+
+## 2.0 Methodological Branches and Scope
+
+The methodology contains one executed comparison path and several scoped branches. The executed path is the dataset and method progression reported in this paper: `v4_clean` data construction, UNet++ training, six inference methods (TR, OT, UNet++, UNet_TR, UNet_OT, UNet_CRF), and chip-level plus per-iceberg evaluation. All headline tables and figures come from this path unless explicitly labelled otherwise.
+
+Several planning branches were investigated or specified but are not part of the executed comparison. They are documented here before the main pipeline to prevent them from being confused with reported results:
+
+- **Tiny-iceberg annotation recovery**: fixed-threshold and Otsu candidate-generation workflows were developed for visual review of missed small icebergs, excluding overlap with existing annotations and suppressing broad bright regions. These candidates have not been merged into the training labels, and no retrained model in this paper uses them.
+- **White top-hat post-processing**: a morphological white top-hat recovery step was specified as a possible `+TH` companion to each of the six base methods. The branch is treated as a sensitivity path for small-iceberg recovery, not as a headline method in the current six-method comparison.
+- **Meteorological filtering**: wind speed and air temperature from CARRA were identified as possible confounders for scene selection. No wind-speed or temperature exclusion is applied in the reported dataset; these variables are retained as contextual metadata and possible future stratification axes.
+- **CatBoost, contrast-based modelling, and dynamic thresholding**: these were listed as candidate method branches in the planning notes. They are deferred and have no trained model, inference outputs, or evaluation tables in the current paper.
 
 ## 2.1 Study Regions and Imagery
 
@@ -81,13 +93,31 @@ All three methods share the same UNet++ checkpoint and the same softmax probabil
 
 ## 2.10 White Top-Hat Filtering for Small-Iceberg Recovery (deferred)
 
-A morphological white top-hat post-processing step was scoped for small-iceberg recovery but is not in the current six-method comparison. When implemented, the white top-hat will be applied to every method's output as a "+TH" variant. See `tiny_icebergs_methods_addendum.md` for the specification.
+A morphological white top-hat post-processing step was scoped for small-iceberg recovery but is not in the current six-method comparison. The intended branch applies a disk-structured white top-hat filter to the B08 band, thresholds the response, removes components below the 40 m root-length cutoff, subtracts pixels already covered by a base method, and writes a merged base-plus-recovered `+TH` output for each base method. See `tiny_icebergs_methods_addendum.md` for the annotation-review context; any `+TH` results must be reported separately from the six headline methods.
 
 ## 2.11 Evaluation
 
 Predictions for every method are stored as GeoPackages with one polygon per detected iceberg, carrying `area_m2`, `class_name`, and `source_file`. Evaluation rasterises these polygons back to pixel masks using the chip's own affine transform and runs two parallel pipelines.
 
 **Pixel-level metrics (`scripts/eval_methods.py`)**: per chip, computes IoU, precision, recall, F1, predicted area in m$^2$, ground-truth area in m$^2$, absolute area error, and squared area error against the iceberg-class mask. Aggregations by (method, sza_bin) report mean IoU / precision / recall / F1, area MAE (mean absolute area error in m$^2$), area MSE, chip count, and skip count. Aggregations also break out a GT-positive-only view, which excludes chips with zero ground-truth iceberg pixels.
+
+For a predicted binary mask $P$ and reference mask $R$, chip-level IoU is:
+
+$$\mathrm{IoU} = \frac{|P \cap R|}{|P \cup R|} = \frac{TP}{TP + FP + FN}$$
+
+For chip $i$, predicted and reference iceberg area are:
+
+$$A_{\mathrm{pred},i} = n_{\mathrm{pred},i} \cdot r^2,\quad A_{\mathrm{ref},i} = n_{\mathrm{ref},i} \cdot r^2$$
+
+where $r = 10$ m is the Sentinel-2 pixel size. Area error for chip $i$ is:
+
+$$e_i = A_{\mathrm{pred},i} - A_{\mathrm{ref},i}$$
+
+For a reporting group with $N$ evaluated chips:
+
+$$\mathrm{MAE}_{area} = \frac{1}{N}\sum_{i=1}^{N}|e_i|$$
+
+$$\mathrm{MSE}_{area} = \frac{1}{N}\sum_{i=1}^{N}e_i^2$$
 
 **Per-pair metrics (`scripts/eval_per_iceberg.py`)**: per chip, ground-truth and predicted masks are decomposed into connected components. Pairwise IoU between every GT and predicted component is computed, with a bounding-box prefilter that skips disjoint pairs without touching pixel data. Pairs are matched by Hungarian assignment on cost `1 - IoU` (`scipy.optimize.linear_sum_assignment`); pairs with IoU < 0.3 are dropped as unmatched. This is described in detail in Section 2.12.
 
@@ -117,7 +147,15 @@ $$\mathrm{AE}_\mathrm{root} = |\sqrt{A_\mathrm{S2}} - \sqrt{A_\mathrm{ref}}| \qu
 
 $$\mathrm{IoU} = \frac{|P \cap R|}{|P \cup R|}$$
 
-Positive RE indicates Sentinel-2 overestimation. Per-bin Mean Absolute Error (MAE) is the mean of $\mathrm{AE}_\mathrm{area}$ or $\mathrm{AE}_\mathrm{root}$ over matched pairs. Root-length MAE is preferred for cross-size comparison because it does not amplify with the square of iceberg linear scale.
+Positive RE indicates Sentinel-2 overestimation. Per-bin Mean Absolute Error (MAE) is the mean of $\mathrm{AE}_\mathrm{area}$ or $\mathrm{AE}_\mathrm{root}$ over matched pairs. For $M$ matched iceberg pairs:
+
+$$\mathrm{MAE}_{area} = \frac{1}{M}\sum_{j=1}^{M}|A_{\mathrm{S2},j} - A_{\mathrm{ref},j}|$$
+
+$$\mathrm{MAE}_{root} = \frac{1}{M}\sum_{j=1}^{M}|\sqrt{A_{\mathrm{S2},j}} - \sqrt{A_{\mathrm{ref},j}}|$$
+
+$$\mathrm{MSE}_{area} = \frac{1}{M}\sum_{j=1}^{M}(A_{\mathrm{S2},j} - A_{\mathrm{ref},j})^2$$
+
+Root-length MAE is preferred for cross-size comparison because it does not amplify with the square of iceberg linear scale.
 
 ### Matching
 
@@ -176,6 +214,8 @@ Two preprocessing operations distinguish our pipeline from Fisser's published re
 
 Because both operations substantially edit Fisser's data, the experimental design treats preprocessing as a controlled variable rather than a fixed setting. A0 and A1 anchor on `v4_raw_lt65` (398 lt65 Fisser chips, no filter, no mask, no IC chip-drop), preserving Fisser's published cleaning. A2 through A9 anchor on `v4_clean_lt65` (330 chips with our 40 m + IC pipeline applied). The A0 to A2 contrast isolates the preprocessing pipeline. To support a robustness check across all SZA bins, a parallel `v4_raw` manifest (984 chips, no filters, all bins) backs a companion baseline run that reports the same per-pair MAE / IoU / detection tables as `v4_clean`. The paper presents both tables; the delta is read directly as the preprocessing-pipeline impact.
 
+This contrast also defines the broader dataset-philosophy axis in the study: an idealized iceberg-only retrieval setting versus a realistic fjord-scene setting that retains sea ice, melange, and ambiguous bright background.
+
 ### 2.13.4 Phase A 2x3 grid
 
 A4-A9 form a 2x3 grid:
@@ -186,7 +226,9 @@ A4-A9 form a 2x3 grid:
 | Class: fixed pos | A5                | A8                            |
 | Class: adaptive  | A6                | A9                            |
 
-Each row reads "same as the column-1 cell, but with size oversampling added." The grid lets the paper read off the marginal lift of each balancing axis when the other axis is held fixed. Pairs to look at are A4-A5-A6 (class on a fixed dataset), A4-A7 (size on natural class distribution), A5-A8, A6-A9 (size on top of class).
+Each row reads "same as the column-1 cell, but with size oversampling added." The grid is designed to read off the marginal lift of each balancing axis when the other axis is held fixed. Pairs to look at are A4-A5-A6 (class on a fixed dataset), A4-A7 (size on natural class distribution), A5-A8, A6-A9 (size on top of class).
+
+This grid is a design structure, not a guarantee that all six cells remain empirically distinct. On `v4_clean_lt65_plus_nulls`, GT-positive chips are the natural majority, so scheme_D and scheme_I produce identical class-balanced training sets. Under the 4x oversampling cap, schemes J, K, and L also converge to the same size-balanced training set. The resulting Phase A comparison therefore reads as three realized training conditions: A4, A5/A6, and A7/A8/A9.
 
 ### 2.13.5 Reporting metrics on the run
 
@@ -199,3 +241,38 @@ Every experiment run produces three CSV families:
 The per-pair table is the headline for Fisser comparability. The chip-level table is the segmentation-community-standard companion. Detection stats are required context for any cross-method MAE claim.
 
 The headline tables are reported on `v4_clean` (canonical baseline). A parallel run on `v4_raw` (no 40 m filter, no IC mask, all SZA bins) produces the same three CSV families. The delta between the two table sets, reported under matched (method, sza_bin) pairs, attributes performance differences to the preprocessing pipeline alone.
+
+## Planned Methodology Figures
+
+### Fig. 4. Evaluation schematic
+
+Create a reader-friendly schematic explaining how binary predictions become the reported per-iceberg metrics. The figure should use a left-to-right pipeline:
+
+`ground-truth mask + predicted mask -> connected components -> IoU matrix -> Hungarian matching -> matched/unmatched objects -> MAE / IoU / MSE reporting table`
+
+The schematic should include:
+
+- **Ground-truth components**: show a simple mask or real test chip with ground-truth iceberg components outlined in blue and labelled `GT1`, `GT2`, `GT3`.
+- **Predicted components**: show predicted iceberg components outlined in orange and labelled `P1`, `P2`, `P3`.
+- **IoU-based matching**: show a compact IoU matrix with ground-truth components as rows and predicted components as columns. Highlight the selected Hungarian matches and note that matches with IoU < 0.3 are dropped.
+- **Matched and unmatched outcomes**: explicitly mark matched pairs as evaluated pairs, unmatched ground-truth objects as false negatives, and unmatched predictions as false positives.
+- **Metric table**: include a compact reporting table with columns `Method`, `SZA bin`, `Area MAE`, `Root-length MAE`, `Mean IoU`, `MSE`, and `Match rate`. Use real baseline values if available; otherwise use clearly schematic placeholder values.
+
+Implementation target:
+
+- Add `iceberg-rework/scripts/make_fig4_evaluation_schematic.py`.
+- Prefer a real `v4_clean` test chip with multiple ground-truth and predicted components.
+- Load baseline outputs from `runs/exp_baseline_v1/20260424_185158/inference/` and `runs/exp_baseline_v1/20260424_185158/per_iceberg/` if available locally.
+- If real outputs are unavailable, generate simple synthetic masks that exactly illustrate the same connected-component, IoU, Hungarian-match, false-negative, and false-positive logic.
+- Save through the figure registry to `iceberg-rework/viz/paper_figures/fig4_evaluation_schematic.png`.
+- Optionally copy the final PNG to `paper-writing/figures/fig4_evaluation_schematic.png`.
+
+Draft caption:
+
+Fig. 4. Evaluation workflow for per-iceberg metrics. Ground-truth and predicted masks are decomposed into connected components, pairwise IoU is computed, and Hungarian assignment selects non-overlapping matches. Matched pairs contribute area MAE, root-length MAE, IoU, and MSE; unmatched ground-truth objects are counted as false negatives and unmatched predictions as false positives. Match rate is reported alongside error metrics to disclose selection bias.
+
+Validation checklist:
+
+- Confirm the figure explicitly shows ground-truth components, predicted components, the IoU matrix, Hungarian matching, unmatched false negatives, unmatched false positives, and the MAE / IoU / MSE reporting table.
+- Confirm the schematic matches the evaluator: Hungarian assignment on `1 - IoU`, matches below IoU < 0.3 dropped, MAE primary, IoU secondary, and MSE supplementary.
+- Confirm the figure makes no new model-method claims; it explains evaluation only.
