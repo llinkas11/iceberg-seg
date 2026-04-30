@@ -77,6 +77,10 @@ paper-writing/_archive/
 paper-writing/overleaf/
 paper-writing/*.pdf
 
+# Retired figure versions (keep only the latest in fig-archive/)
+paper-writing/figures/fig-archive/_archive/
+paper-writing/figure_review/results_figs_table_previews/
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Large generic binary extensions (catch-all)
 # ──────────────────────────────────────────────────────────────────────────────
