@@ -181,7 +181,15 @@ def _list_candidates(args):
 
 # 2. Per-row data loaders
 def _load_fisser_row(chip_stem, split, args):
-    """Return (chip_3band, prelim_mask_3class, clean_mask_binary, note_str)."""
+    """Return (chip_3band, prelim_mask_3class, clean_mask_binary, note_str).
+
+    The ``split`` argument is unused: filter_small_icebergs.py preserves the
+    Fisser-original pkl ordering (323 / 39 / 36) when it produces
+    ``data/fisser_filtered/``, so the filtered pkl name and within-pkl
+    position are the SAME as the raw pkl name and position resolved by
+    ``_locate_fisser(stem_idx)``. v4_clean's redrawn split does not affect
+    the filtered Fisser pkls, only the v4_clean train/val/test pkls.
+    """
     stem_idx = int(chip_stem.split("_")[-1])
     y_name, x_name, pos = _locate_fisser(stem_idx)
 
@@ -196,19 +204,44 @@ def _load_fisser_row(chip_stem, split, args):
     prelim = Y_raw[pos]
     n_shadow = int((prelim == 2).sum())
 
-    # Cleaned binary mask (after shadow merge + 40 m filter)
-    filt_y_name = FISSER_FILTERED_PKLS[split]
-    with open(os.path.join(args.filtered_fisser, filt_y_name), "rb") as f:
+    # Cleaned binary mask: use the SAME pkl name as the raw load. Indexing
+    # the filtered fisser dir by v4_clean's redrawn split was a row-pairing
+    # bug because the filtered pkls preserve Fisser-original ordering.
+    with open(os.path.join(args.filtered_fisser, y_name), "rb") as f:
         Y_filt = pickle.load(f)
     if Y_filt.ndim == 4:
         Y_filt = Y_filt[:, 0]
     clean = (Y_filt[pos] > 0).astype(np.uint8)
 
-    # Component drop count: post-shadow-merge raw vs cleaned
+    # Component drop count: post-shadow-merge raw vs cleaned.
+    # 4-connectivity here matches scipy.ndimage.label's default in
+    # filter_small_icebergs.py; using 8-connectivity would over-merge and
+    # mis-count.
     merged = (prelim > 0).astype(np.int32)
-    _, n_raw_cc = cc_label(merged, structure=np.ones((3, 3)))
-    _, n_clean_cc = cc_label(clean, structure=np.ones((3, 3)))
+    _, n_raw_cc = cc_label(merged)
+    _, n_clean_cc = cc_label(clean)
     n_dropped = max(0, n_raw_cc - n_clean_cc)
+
+    # Pair-correctness invariant: every component in the merged raw mask that
+    # is >= MIN_AREA_PX must align pixel-for-pixel with the cleaned mask.
+    labels_raw, _ = cc_label(merged)
+    kept_from_raw = np.zeros_like(merged, dtype=np.uint8)
+    for cid in range(1, n_raw_cc + 1):
+        comp = (labels_raw == cid)
+        if comp.sum() >= MIN_AREA_PX:
+            kept_from_raw |= comp.astype(np.uint8)
+    n_diff = int((kept_from_raw != clean).sum())
+    if n_diff != 0:
+        raise RuntimeError(
+            f"PAIRING BUG: {chip_stem} raw kept components do not match "
+            f"cleaned mask pixel-for-pixel ({n_diff} px differ). "
+            f"Check that the filtered pkl name + position are aligned with "
+            f"the raw pkl name + position."
+        )
+
+    # Dropped-pixel mask: union of components below the 40 m cutoff.
+    # The cleaned panel renders kept_from_raw in gold and dropped in red.
+    dropped = (merged.astype(np.uint8) & (~clean.astype(bool)).astype(np.uint8))
 
     note = (
         f"Fisser {split} #{pos}\n"
@@ -216,7 +249,7 @@ def _load_fisser_row(chip_stem, split, args):
         f"{n_dropped} comp(s) <16 px dropped\n"
         f"{n_raw_cc} -> {n_clean_cc} components"
     )
-    return chip, prelim, clean, note
+    return chip, prelim, clean, dropped, note
 
 
 def _resolve_roboflow_image_id(coco, target_stem):
@@ -273,13 +306,30 @@ def _load_roboflow_row_b(chip_stem, args):
     clean_anns = _polygons_for_image(filt_coco, clean_id)
     chip, _ = _open_roboflow_chip(chip_stem, args)
 
+    # Compute the dropped polygon set: prelim minus clean, matched by
+    # segmentation geometry (filter renumbers IDs, so id-based diff is unsafe).
+    clean_seg_keys = set()
+    for ca in clean_anns:
+        seg = ca.get("segmentation")
+        if isinstance(seg, list):
+            clean_seg_keys.add(tuple(tuple(round(float(v), 3) for v in inner)
+                                     for inner in seg if isinstance(inner, list)))
+    dropped_anns = []
+    for pa in prelim_anns:
+        seg = pa.get("segmentation")
+        if isinstance(seg, list):
+            key = tuple(tuple(round(float(v), 3) for v in inner)
+                        for inner in seg if isinstance(inner, list))
+            if key not in clean_seg_keys:
+                dropped_anns.append(pa)
+
     sza_bin = _resolve_sza_for_chip_stem(chip_stem, args)
     note = (
         f"Roboflow {sza_bin}\n"
         f"{len(prelim_anns)} prelim -> {len(clean_anns)} kept\n"
-        f"{len(prelim_anns) - len(clean_anns)} dropped <40 m"
+        f"{len(dropped_anns)} dropped <40 m"
     )
-    return chip, prelim_anns, clean_anns, note
+    return chip, prelim_anns, clean_anns, dropped_anns, note
 
 
 def _resolve_sza_for_chip_stem(chip_stem, args):
@@ -292,22 +342,29 @@ def _resolve_sza_for_chip_stem(chip_stem, args):
 def _load_roboflow_row_c(chip_stem, args):
     """
     Row (c) loader. Returns:
-      chip      (3, H, W) reflectance
-      anns      kept polygon annotations (gold in col 2, red outlines in col 3)
-      ic_mask   (H, W) bool — pixels the training-time IC mask would zero
-      note      multiline annotator note
+      chip          (3, H, W) reflectance
+      prelim_anns   raw polygon annotations (gold col 2; pre-cleaning)
+      clean_anns    kept polygon annotations (red col 3; post 40 m filter)
+      ic_mask       (H, W) bool — pixels the training-time IC mask would zero
+      note          multiline annotator note
     """
+    with open(args.raw_coco) as f:
+        raw_coco = json.load(f)
     with open(args.filtered_coco) as f:
         filt_coco = json.load(f)
-    img_id, img_meta = _resolve_roboflow_image_id(filt_coco, chip_stem)
-    if img_id is None:
-        raise RuntimeError(f"chip_stem {chip_stem} not in filtered COCO")
-    anns = _polygons_for_image(filt_coco, img_id)
+    raw_id, _ = _resolve_roboflow_image_id(raw_coco, chip_stem)
+    clean_id, _ = _resolve_roboflow_image_id(filt_coco, chip_stem)
+    if raw_id is None or clean_id is None:
+        raise RuntimeError(f"chip_stem {chip_stem} not in one of the COCO jsons")
+    prelim_anns = _polygons_for_image(raw_coco, raw_id)
+    clean_anns = _polygons_for_image(filt_coco, clean_id)
 
     chip, _ = _open_roboflow_chip(chip_stem, args)
 
-    # Build annotation mask, then derive the IC pixel mask
-    segs = [s for ann in anns for s in ann.get("segmentation", [])]
+    # Build cleaned annotation mask, then derive the IC pixel mask. The IC
+    # mask is computed over the CLEANED annotation set, matching the
+    # build_clean_dataset.py convention (training-time).
+    segs = [s for ann in clean_anns for s in ann.get("segmentation", [])]
     ann_mask = polygons_to_mask(segs, CHIP_SIZE, CHIP_SIZE) > 0
     b08 = chip[2]
     ic_mask = (b08 >= B08_THRESHOLD) & (~ann_mask)
@@ -317,11 +374,12 @@ def _load_roboflow_row_c(chip_stem, args):
     row = log[log["chip_stem"] == chip_stem].iloc[0]
     note = (
         f"Roboflow {row['sza_bin']}\n"
+        f"{len(prelim_anns)} prelim -> {len(clean_anns)} kept\n"
         f"IC fraction = {float(row['ic_aware']):.2f}\n"
         f"{n_masked:,} bright px masked\n"
         f"(sea ice / cloud)"
     )
-    return chip, anns, ic_mask, note
+    return chip, prelim_anns, clean_anns, ic_mask, note
 
 
 # 3. Panel renderers
@@ -345,20 +403,31 @@ def _render_fisser_prelim(ax, chip, prelim_3class):
     ax.set_xticks([]); ax.set_yticks([])
 
 
-RED_KEPT = "#dc1c13"
-GRAY_MASK_RGBA = [0.45, 0.45, 0.45, 0.55]
+RED_KEPT      = "#dc1c13"             # kept-iceberg outlines (rows a, b)
+RED_MASK_RGBA = [0.86, 0.11, 0.08, 0.45]  # red translucent overlay for IC-masked pixels (row c)
 
 
-def _render_red_outlines_from_mask(ax, chip, mask, *, linewidth=1.2):
-    """
-    Render kept-iceberg outlines (traced from a binary mask) in red over the
-    chip RGB. Used in row (a) where the cleaned annotation is a binary mask.
-    """
+def _render_outlines_from_mask(ax, chip, mask, *, color="gold", linewidth=1.2):
+    """Trace contours from a binary mask and draw them on the chip RGB."""
     rgb = make_false_color(chip, b08_idx=2)
     ax.imshow(rgb)
     contours = find_contours(mask.astype(float), 0.5)
     for c in contours:
-        ax.plot(c[:, 1], c[:, 0], color=RED_KEPT, linewidth=linewidth)
+        ax.plot(c[:, 1], c[:, 0], color=color, linewidth=linewidth)
+    ax.set_xticks([]); ax.set_yticks([])
+
+
+def _render_kept_and_dropped_from_masks(ax, chip, kept_mask, dropped_mask, *, linewidth=1.2):
+    """
+    Row (a) cleaned panel: gold outlines for kept components, red outlines
+    for components below the 40 m cutoff that the cleaning step removed.
+    """
+    rgb = make_false_color(chip, b08_idx=2)
+    ax.imshow(rgb)
+    for c in find_contours(kept_mask.astype(float), 0.5):
+        ax.plot(c[:, 1], c[:, 0], color="gold", linewidth=linewidth)
+    for c in find_contours(dropped_mask.astype(float), 0.5):
+        ax.plot(c[:, 1], c[:, 0], color=RED_KEPT, linewidth=linewidth * 0.9)
     ax.set_xticks([]); ax.set_yticks([])
 
 
@@ -376,31 +445,50 @@ def _render_polygon_outlines(ax, chip, anns, *, color="gold", linewidth=1.2):
     ax.set_xticks([]); ax.set_yticks([])
 
 
-def _render_red_outlines_from_polygons(ax, chip, anns, *, linewidth=1.4):
-    """Render kept polygons in red outline. Used in row (b) cleaned panel."""
-    _render_polygon_outlines(ax, chip, anns,
-                              color=RED_KEPT, linewidth=linewidth)
+def _render_kept_and_dropped_polygons(ax, chip, kept_anns, dropped_anns, *, linewidth=1.4):
+    """
+    Row (b) cleaned panel: gold outlines for the polygons kept after the
+    40 m filter, red outlines for the polygons dropped by the filter.
+    """
+    rgb = make_false_color(chip, b08_idx=2)
+    ax.imshow(rgb)
+    for a in kept_anns:
+        for seg in a.get("segmentation", []):
+            if not isinstance(seg, list) or len(seg) < 6:
+                continue
+            pts = np.array(seg, dtype=float).reshape(-1, 2)
+            ax.add_patch(plt.Polygon(pts, fill=False,
+                                       edgecolor="gold", linewidth=linewidth))
+    for a in dropped_anns:
+        for seg in a.get("segmentation", []):
+            if not isinstance(seg, list) or len(seg) < 6:
+                continue
+            pts = np.array(seg, dtype=float).reshape(-1, 2)
+            ax.add_patch(plt.Polygon(pts, fill=False,
+                                       edgecolor=RED_KEPT, linewidth=linewidth * 0.9))
+    ax.set_xticks([]); ax.set_yticks([])
 
 
 def _render_ic_overlay(ax, chip, ic_mask, anns, *, linewidth=1.4):
     """
-    Row (c) cleaned panel: chip RGB underneath, gray semi-transparent overlay
-    on the IC-masked pixels (showing which pixels the training-time mask
-    would zero), and red outlines of the kept iceberg annotations on top.
-    The chip itself stays visible so the reader can see what the mask covers.
+    Row (c) cleaned panel: chip RGB underneath, RED semi-transparent overlay
+    on IC-masked pixels (the pixels training will zero out), and GOLD
+    polygon outlines for the kept iceberg annotations on top. The colour
+    convention is: gold = kept iceberg (consistent with the preliminary
+    panel), red = pixels removed by IC masking.
     """
     rgb = make_false_color(chip, b08_idx=2)
     ax.imshow(rgb)
-    gray = np.zeros((*ic_mask.shape, 4), dtype=np.float32)
-    gray[ic_mask] = GRAY_MASK_RGBA
-    ax.imshow(gray)
+    overlay = np.zeros((*ic_mask.shape, 4), dtype=np.float32)
+    overlay[ic_mask] = RED_MASK_RGBA
+    ax.imshow(overlay)
     for ann in anns:
         for seg in ann.get("segmentation", []):
             if not isinstance(seg, list) or len(seg) < 6:
                 continue
             pts = np.array(seg, dtype=float).reshape(-1, 2)
             ax.add_patch(plt.Polygon(pts, fill=False,
-                                       edgecolor=RED_KEPT, linewidth=linewidth))
+                                       edgecolor="gold", linewidth=linewidth))
     ax.set_xticks([]); ax.set_yticks([])
 
 
@@ -445,40 +533,42 @@ def main():
 
     # 4a. Load each row's data
     print(f"Loading row (a) Fisser: {args.row_a} ({split_a})")
-    chip_a, prelim_a, clean_a, note_a = _load_fisser_row(args.row_a, split_a, args)
+    chip_a, prelim_a, clean_a, dropped_a, note_a = _load_fisser_row(args.row_a, split_a, args)
     print(f"  {note_a.replace(chr(10), ' | ')}")
 
     print(f"Loading row (b) Roboflow: {args.row_b}")
-    chip_b, prelim_b, clean_b, note_b = _load_roboflow_row_b(args.row_b, args)
+    chip_b, prelim_b, clean_b, dropped_b, note_b = _load_roboflow_row_b(args.row_b, args)
     print(f"  {note_b.replace(chr(10), ' | ')}")
 
     print(f"Loading row (c) Roboflow IC-masked: {args.row_c}")
-    chip_c, prelim_c, ic_mask_c, note_c = _load_roboflow_row_c(args.row_c, args)
+    chip_c, prelim_c, clean_c, ic_mask_c, note_c = _load_roboflow_row_c(args.row_c, args)
     print(f"  {note_c.replace(chr(10), ' | ')}")
 
-    # 4b. Compose 3x4 grid
+    # 4b. Compose 3x4 grid. Convention: in column 3, GOLD outlines = kept
+    # iceberg annotation, RED = removed by the cleaning step (sub-40 m
+    # components, dropped polygons, or pixels zeroed by the IC mask).
     fig, axes = plt.subplots(3, 4, figsize=(13, 9.5),
                               gridspec_kw={"width_ratios": [1, 1, 1, 0.9]})
     fig.patch.set_facecolor("white")
 
-    # Row (a) Fisser: cleaned panel = kept icebergs traced from binary mask
-    # in red outlines
+    # Row (a) Fisser: cleaned panel = gold (kept components) + red (dropped <16 px)
     _render_image_panel(axes[0, 0], chip_a)
     _render_fisser_prelim(axes[0, 1], chip_a, prelim_a)
-    _render_red_outlines_from_mask(axes[0, 2], chip_a, clean_a)
+    _render_kept_and_dropped_from_masks(axes[0, 2], chip_a, clean_a, dropped_a)
     _render_note(axes[0, 3], note_a)
 
-    # Row (b) Roboflow size filter: cleaned panel = surviving polygons in red
+    # Row (b) Roboflow size filter: cleaned panel = gold (kept) + red (dropped)
     _render_image_panel(axes[1, 0], chip_b)
     _render_polygon_outlines(axes[1, 1], chip_b, prelim_b, color="gold")
-    _render_red_outlines_from_polygons(axes[1, 2], chip_b, clean_b)
+    _render_kept_and_dropped_polygons(axes[1, 2], chip_b, clean_b, dropped_b)
     _render_note(axes[1, 3], note_b)
 
-    # Row (c) Roboflow IC mask: cleaned panel = chip RGB + gray IC mask
-    # overlay + red outlines of kept polygons (chip stays visible)
+    # Row (c) Roboflow IC mask: preliminary panel = raw polygons in gold,
+    # cleaned panel = gold polygons (kept) + red overlay (IC-masked pixels
+    # that training will zero out).
     _render_image_panel(axes[2, 0], chip_c)
     _render_polygon_outlines(axes[2, 1], chip_c, prelim_c, color="gold")
-    _render_ic_overlay(axes[2, 2], chip_c, ic_mask_c, prelim_c)
+    _render_ic_overlay(axes[2, 2], chip_c, ic_mask_c, clean_c)
     _render_note(axes[2, 3], note_c)
 
     # Column titles on row 0
@@ -501,8 +591,23 @@ def main():
         axes[i, 0].set_ylabel(lab, rotation=0, ha="right", va="center",
                                 fontsize=13, labelpad=70)
 
+    # Legend: show the colour convention used in column 3.
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+    legend_handles = [
+        Line2D([0], [0], color="gold", lw=2.4,
+               label="Gold: iceberg annotation kept after cleaning"),
+        Line2D([0], [0], color=RED_KEPT, lw=2.4,
+               label="Red (outline): components / polygons removed by 40 m filter"),
+        Patch(facecolor=RED_KEPT, alpha=RED_MASK_RGBA[3], edgecolor="none",
+              label="Red (fill): pixels zeroed by IC mask (training only)"),
+    ]
+    fig.legend(handles=legend_handles, loc="lower center", ncol=1,
+               frameon=False, fontsize=11,
+               bbox_to_anchor=(0.5, -0.005))
+
     # No suptitle: figure caption (set in LaTeX) carries the figure title.
-    fig.tight_layout()
+    fig.tight_layout(rect=[0, 0.06, 1, 1])
 
     # 5. Route through fig registry
     caption = (
