@@ -16,9 +16,12 @@ It then creates a preview image with panels:
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
+
+RF_HASH_RE = re.compile(r"_png\.rf\.[A-Za-z0-9]+$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -73,7 +76,7 @@ def find_locator_image(locator_dir: Path, stem: str) -> Path | None:
 def main() -> None:
     args = parse_args()
     root = Path.cwd()
-    script_path = root / "roboflow" / "preview_mask_classes.py"
+    script_path = Path(__file__).resolve().parent / "preview_mask_classes.py"
     imgs_dir = (root / args.imgs_dir).resolve()
     masks_dir = (root / args.masks_dir).resolve()
     out_dir = (root / args.out_dir).resolve()
@@ -92,7 +95,7 @@ def main() -> None:
         else:
             png_path = png_path.resolve()
 
-        stem = png_path.stem
+        stem = RF_HASH_RE.sub("", png_path.stem)
         image_path = imgs_dir / f"{stem}.tif"
         mask_path = masks_dir / f"{stem}_ground_truth.tif"
         out_path = out_dir / f"{stem}_preview.png"
