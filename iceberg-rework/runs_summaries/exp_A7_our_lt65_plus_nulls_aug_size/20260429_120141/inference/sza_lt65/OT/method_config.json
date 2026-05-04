@@ -1,0 +1,14 @@
+{
+  "git_sha": null,
+  "method": "OT",
+  "out_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_A7_our_lt65_plus_nulls_aug_size/20260429_120141/inference/sza_lt65/OT",
+  "params": {
+    "b08_idx": 2,
+    "chips_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/data/v4_clean_lt65_plus_nulls/test_chips/sza_lt65",
+    "ic_threshold": 0.15,
+    "min_area_m2": 100,
+    "min_otsu_thresh": 0.1
+  },
+  "run_kind": "inference_method",
+  "run_utc": "2026-04-29T16:04:24+00:00"
+}

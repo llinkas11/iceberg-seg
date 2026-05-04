@@ -1,0 +1,27 @@
+{
+  "args": {
+    "batch_size": 16,
+    "data_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_A4_our_lt65_plus_nulls_aug/20260429_234835/balanced",
+    "encoder": "resnet34",
+    "epochs": 100,
+    "lr": 0.0001,
+    "mode": "s2",
+    "no_augment": false,
+    "no_pretrain": false,
+    "out_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_A4_our_lt65_plus_nulls_aug/20260429_234835/model",
+    "seed": 42,
+    "workers": 4
+  },
+  "experiment_mode": true,
+  "git_sha": null,
+  "manifest_id": "v4_clean_lt65_plus_nulls",
+  "metrics": {
+    "best_val_iou": 0.22481955774128437,
+    "test_iou": 0.2741369878252347,
+    "test_loss": 2.1326369047164917
+  },
+  "reproducible": true,
+  "run_kind": "training",
+  "run_started_utc": "2026-04-30T03:50:03+00:00",
+  "script": "train.py"
+}

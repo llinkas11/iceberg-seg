@@ -1,0 +1,13 @@
+{
+  "git_sha": null,
+  "method": "UNet_TR",
+  "out_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_A8_our_lt65_plus_nulls_aug_2pos_size/20260429_102525/inference/sza_lt65/UNet_TR",
+  "params": {
+    "iceberg_band": 1,
+    "min_area_m2": 100.0,
+    "probs_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_A8_our_lt65_plus_nulls_aug_2pos_size/20260429_102525/inference/sza_lt65/UNet/probs",
+    "threshold": 0.22
+  },
+  "run_kind": "inference_method",
+  "run_utc": "2026-04-29T14:30:25+00:00"
+}
