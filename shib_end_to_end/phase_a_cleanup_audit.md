@@ -1,8 +1,10 @@
 # Phase A Cleanup Audit
 
-**Date:** 2026-05-02  
-**Scope:** Phase A lt65 runs, A0-A9  
+**Date:** 2026-05-02 (lt65 audit); 2026-05-05 follow-up linked below.
+**Scope:** Phase A lt65 runs, A0-A9
 **Status:** CSV audit confirms A0 is the lt65 Phase A winner under validation and per-iceberg metrics. A5/A6 only win one narrow chip-level diagnostic metric. The follow-up C1/C2 ablation shows the 40 m filter alone is not the main cause of the A2 collapse; the IC-only intervention causes the validation collapse.
+
+> **2026-05-05 update:** Re-evaluating every Phase A backbone on the v4_clean test split for all four SZA bins (Slurm 60293) shows A1 wins every higher-SZA bin, while A0 still wins lt65. Aggregate over the three higher-SZA bins: A1 mean per-pair MAE 28.01 m vs A0's 33.33 m (16% lower). A1 + UNet_CRF is the strongest single-pipeline option across all four SZA bins. Full T1-T4 tables in [phase_a_higher_sza_t1_t4.md](phase_a_higher_sza_t1_t4.md). The lt65 conclusion below stands; the higher-SZA story is additive, not contradictory.
 
 ---
 
