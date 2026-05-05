@@ -135,7 +135,7 @@ The methods comparison begins with six base pipelines. The first two operate dir
 
 \textbf{Fixed B08 threshold (TR).} A scene-wide B08 $\geq$ 0.22 cutoff applied per chip without spatial context. This is the operational equivalent of the corrected-reflectance B08 $\geq$ 0.12 threshold reported by \citet{Fisser2024}. Polygons below the 100 m$^2$ minimum area are discarded after polygonisation.
 
-\textbf{Per-chip Otsu (OT).} A chip-adaptive threshold computed from the B08 histogram \citep{Otsu1979}, with guards on radiometrically flat or ice-contaminated chips (Otsu floor 0.10, ceiling 0.50; chip skipped if IC $>$ 15 \%). Provides an image-only adaptive baseline against which to measure the value of the fixed Fisser threshold under SZA shifts.
+\textbf{Per-chip Otsu (OT).} A chip-adaptive threshold computed from the B08 histogram \citep{Otsu1979}, with guards on radiometrically flat or ice-contaminated chips (Otsu floor 0.10, ceiling 0.50; chip skipped if IC $>$ 15 \%). The 0.10 floor is set in offset-uncorrected reflectance: a per-chip Otsu distribution computed over all 23,981 study chips with no floor applied shows a narrow spike just above 0.10 from the Sentinel-2 L1C baseline 04.00 +0.10 radiometric offset on ocean-only chips, which the floor removes (6.08 \%, 1,458 / 23,981 chips skipped); the offset-corrected equivalent of 0.10 (i.e.\ 0.20) would discard 50.54 \% of chips (12,120 / 23,981), including ~45 \% of chips with legitimate iceberg / water boundaries (Fig.~S1). Provides an image-only adaptive baseline against which to measure the value of the fixed Fisser threshold under SZA shifts.
 
 \textbf{UNet++ argmax (UNet).} The learned binary segmentation baseline. The model decision $P(\mathrm{iceberg}) > 0.5$ is applied to each pixel; the same model also saves the two-band probability raster used by the three downstream methods.
 
@@ -507,6 +507,13 @@ The recovery step trades precision for recall: every method's match rate rises (
 
 \section{Conclusion}
 % TODO: one paragraph summarising headline findings and operational implication.
+
+
+\section{Supplementary material}
+
+The supplementary material contains one figure supporting the per-chip Otsu (OT) noise-floor decision in the Methods section.
+
+\textbf{Fig.~S1.} Per-chip Otsu threshold distribution on Sentinel-2 B08 reflectance over all 23,981 study chips, with the production noise-floor of 0.10 (offset-uncorrected reflectance) and the alternative cutoffs 0.15 and 0.20 marked. Skip-rates: 0.10 removes 6.08 \% of chips (1,458 / 23,981), 0.15 removes 41.02 \% (9,838 / 23,981), and 0.20 (the offset-corrected equivalent of 0.10) removes 50.54 \% (12,120 / 23,981). The narrow spike just above 0.10 is the Sentinel-2 L1C baseline 04.00 +0.10 radiometric offset on ocean-only chips. The 0.10 cutoff in offset-uncorrected reflectance removes those noise-floor chips while preserving the 0.10 to 0.30 distribution mass that carries real iceberg / water boundaries; 0.20 would discard ~45 \% of chips with legitimate boundaries. Source script: \texttt{iceberg-rework/scripts/script\_check\_answers/q07\_otsu\_floor\_distribution.py}.
 
 
 \section{Acknowledgements}

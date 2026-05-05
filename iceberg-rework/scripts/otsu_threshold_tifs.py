@@ -54,7 +54,7 @@ warnings.filterwarnings("ignore")
 
 MIN_AREA_M2     = 100   # minimum polygon area in m² (~10×10 m)
 IC_THRESHOLD    = 0.15  # skip chip if >15% of pixels exceed the Otsu threshold
-MIN_OTSU_THRESH = 0.10  # skip chip if Otsu threshold < this (flat/featureless chips)
+MIN_OTSU_THRESH = 0.10  # skip chip if Otsu < this; in offset-uncorrected reflectance, not 0.20 (see supp. fig figS01_otsu_floor_distribution; empirical answer in script_check_answers/q07_otsu_floor_distribution.py)
 
 
 # ---------------------------------------------------------------------------
