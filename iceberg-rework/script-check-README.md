@@ -1,6 +1,8 @@
 # Classical iceberg-segmentation methods: code review pack
 
-The segmentation scripts I would like a second pair of eyes on. Goal of this review is to confirm that the parameter choices, edge-case handling, and inter-method integration are scientifically defensible. The deep-learning training and the evaluation pipeline are out of scope here; only the per-chip segmentation logic is inside.
+Outlined below: The segmentation scripts I would like a second pair of eyes on. 
+Goal: confirm that the parameter choices, edge-case handling, and inter-method integration are scientifically defensible. 
+Scope: Unet++ training and the evaluation pipeline are not included here; only the per-chip segmentation logic.
 
 ## Scripts under review
 
