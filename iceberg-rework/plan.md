@@ -32,7 +32,7 @@ Fisser class 2 (shadow) merged into class 1 (iceberg) before all analysis. Align
 Individual icebergs (connected components) < 16 pixels (1,600 m2, 40m RL) removed. Matches Fisser 2025 dataset minimum. Most removed components are rasterization artifacts (median 3 pixels), not real icebergs. Documented in `reference/descriptive_stats_results_discussion.md` Section 2.
 
 ### 3. IC Filtering (Annotation-Aware)
-Adapts Fisser et al. (2024) IC method to chip level. IC = fraction of non-annotated pixels with B08 >= 0.22 (Fisser's 0.12 + DN offset). Training chips with IC >= 15% have bright non-annotated pixels masked to zero. Validation and test never masked. 193 training chips masked. Full justification in `reference/b08_analysis_results_discussion.md` Sections 3.1-3.6.
+Adapts Fisser et al. (2025) IC block filter (eq. 2) to chip level. IC = fraction of non-annotated pixels with B08 >= 0.22 (Fisser 2024's 0.12 + DN offset). Training chips with IC >= 15% have bright non-annotated pixels masked to zero. Validation and test never masked. 193 training chips masked. Full justification in `reference/b08_analysis_results_discussion.md` Sections 3.1-3.6.
 
 ### 4. DN Offset
 All reflectances +0.10 high (processing baseline >= 4.0 adds 1000 DN, chip_sentinel2.py does DN*1e-4 without subtracting). Fisser's 0.12 = our 0.22. Documented in smishra's `project_radiometric_offset.md`.
