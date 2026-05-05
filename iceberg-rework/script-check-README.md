@@ -28,7 +28,7 @@ If you want to leave inline edits, the GitHub web UI lets you click the pencil i
 - **Reflectance offset.** All scenes use ESA processing baseline N0500 or later, which adds a +1000 DN offset before distribution. Our chip extractor scales by 1e-4 without subtracting that offset, so every reflectance value in our chips is uniformly +0.10 higher than in the offset-corrected space used by Fisser and others (2024). Every threshold value quoted in this code is in the offset-uncorrected space, i.e. our 0.22 corresponds to Fisser's calibrated 0.12. Because the offset is identical across all our chips, it cancels out of any relative comparison between methods or SZA bins.
 - **Reference baseline.** Fisser and others (2024) is the published Sentinel-2 reference for this region and the source of the `B08 >= 0.12` threshold and the 15 % ice-coverage (IC) chip-rejection rule we adopt.
 - **Study aim.** Compare six methods for retrieving iceberg area at four SZA bins (lt65, 65 to 70, 70 to 75, gt75) in two Greenland fjords (Kangerlussuaq, Sermilik). Two purely classical methods (TR, OT), one learned (UNet++), and three hybrids that consume the UNet++ softmax (UNet_TR, UNet_OT, UNet_CRF). The white top-hat is in the pack as a sensitivity branch, not a headline method.
-- **Outputs.** Each method writes per-chip GeoPackages plus an aggregate `all_icebergs.gpkg`, a `method_config.json` with the parameter block for provenance, and a `skipped_chips.csv` listing every chip the method refused with a reason code. Output schema is the same across methods so the evaluator can join on `chip_stem`.
+- **Outputs.** Every method writes an aggregate `all_icebergs.gpkg`, a `method_config.json` with the parameter block for provenance, and a `skipped_chips.csv` listing every chip the method refused with a reason code. The prob-band methods (`UNet_TR`, `UNet_OT`, `UNet_CRF`) and `TH` additionally emit per-chip gpkgs under `gpkgs/<chip_stem>_icebergs.gpkg`; `OT` also writes per-chip diagnostic PNGs under `pngs/`. Output schema is the same across methods so the evaluator can join on `chip_stem`.
 
 ## Methods at a glance
 
@@ -42,7 +42,7 @@ If you want to leave inline edits, the GitHub web UI lets you click the pencil i
 | UNet+TR | UNet++ softmax band 1 | `P(iceberg) >= 0.22` | `threshold=0.22` | 100 m² |
 | UNet+OT | UNet++ softmax band 1 | per-chip Otsu on `P(iceberg)` | flat-prob and IC guards | 100 m² |
 
-The IC chip-rejection rule (Fisser 2025) is applied identically in TR, TR (NDWI), OT, and UNet+OT: if more than 15 % of pixels in a chip exceed the iceberg-defining threshold for that method, the chip is logged in `skipped_chips.csv` with reason `ic_block_filter` and excluded from the per-method aggregate. Skipped chips never silently disappear from the comparison; they are counted alongside accuracy metrics.
+The IC chip-rejection rule is from Fisser and others (2024): the original IC filter operates on 10 km blocks of the source tile; we apply the same `B08 >= 0.22` cutoff and the same 15 % rule at the chip level (2.56 km) because the dataset stores pre-tiled chips, not source tiles. The rule fires identically in TR, TR (NDWI), OT, and UNet+OT: if more than 15 % of pixels in a chip exceed the iceberg-defining threshold for that method, the chip is logged in `skipped_chips.csv` with reason `ic_block_filter` and excluded from the per-method aggregate. Skipped chips never silently disappear from the comparison; they are counted alongside accuracy metrics.
 
 ## What I would like you to check
 
