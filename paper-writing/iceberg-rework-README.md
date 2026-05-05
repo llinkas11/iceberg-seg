@@ -214,7 +214,7 @@ Reflectances are +0.10 high relative to Fisser's space because chip_sentinel2.py
 
 ---
 
-## Critical numbers (verified 2026-04-27)
+## Critical numbers (verified 2026-04-27, 2026-05-05 addendum below)
 
 - v4_clean: 916 chips total. chips_sha = `fc4b3b16334f2916...`.
 - Splits: 551 / 137 / 228. Test cap: 57 chips per SZA bin.
@@ -222,3 +222,10 @@ Reflectances are +0.10 high relative to Fisser's space because chip_sentinel2.py
 - Per-pair MAE on root length (m), best per bin: UNet_OT 8.0 at lt65; UNet_CRF 7.4 / 9.0 / 12.6 at 65-70 / 70-75 / >75. Threshold-only methods (TR, OT) over-detect with low precision (5-9%) and worsen with rising SZA.
 - 19 experiment YAMLs: baseline_v1 + A0-A9 + B0-B5 + ablation_no_aug + ablation_no_nulls. All validate locally and on HPC.
 - 12 balancing schemes: A-I (single axis) + J/K/L (size + composed).
+
+### 2026-05-05 addendum: Phase A higher-SZA re-eval and backbone comparison
+
+- All 10 Phase A backbones (A0..A9) re-evaluated against the v4_clean test split for all four SZA bins (Slurm 60293). A1 mean per-pair IoU 0.499 across the three higher-SZA bins (best non-A0); A0 0.490; A4 0.437 (2nd-best non-A0). Augmentation alone (A4) and class balancing (A5/A6) do not close the A1 gap; size oversample (A7/A8/A9) actively hurts higher-SZA generalization.
+- Phase B re-run with both A0 and A1 backbones on v4_clean (Slurm 60296 + 60297, six base methods, all four SZA bins). A1 + UNet_CRF wins three of four SZA bins on root-length MAE among the learned methods (lt65 still favours A0 + UNet_OT at 8.45 m, reproducing the published headline within rounding).
+- New driver scripts in `iceberg-rework/scripts/`: `re_eval_phase_a_all_sza.sh`, `re_phase_b_with_a0.sh`, `re_phase_b_with_a1.sh`. Slurm wrappers in `iceberg-rework/slurm/`: `re_eval_phase_a.slurm`, `re_phase_b_a0.slurm`, `re_phase_b_a1.slurm`. Top-hat (`--with_tophat`) NOT included; one more sweep would close that gap.
+- Full T1-T4 tables: `shib_end_to_end/phase_a_higher_sza_t1_t4.md`. Cross-references in `paper-writing/methods_draft.md` (Section 2.6 backbone-selection subsection), `paper-writing/model_progression.md` (higher-SZA generalisation section), `paper-writing/plan.md` (status banner), `shib_end_to_end/README.md` (overview pointer + headline-numbers rows).

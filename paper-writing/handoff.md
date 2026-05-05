@@ -2,6 +2,8 @@
 
 This file is the single document the next context window reads to pick up cleanly. The authoritative project state remains `paper-writing/plan.md`; this handoff covers only what changed in this session and what's next.
 
+> **2026-05-05 addendum:** Phase A higher-SZA re-eval (Slurm 60293, A0..A9 x 4 SZA bins, UNet only) and Phase B backbone comparison (Slurm 60296 + 60297, six methods x 4 SZA bins, A0 and A1) complete. Headline: A1 wins every higher-SZA bin on per-pair IoU and root-length MAE; A0 still wins lt65; A1 + UNet_CRF is the strongest single-pipeline option across all four SZA bins. Full T1-T4 in `shib_end_to_end/phase_a_higher_sza_t1_t4.md`. Pushed in commits `4b50d78` (CSVs + scripts) and `2c7b33b` (docs). Top-hat variants NOT included in the new Phase B re-runs; one more Slurm sweep with `--with_tophat` would close that gap. The user's framing direction: keep Phase A and the backbone-comparison story in supplementary material; main text should focus on the headline that the learned pipeline beats Fisser's baseline at higher SZA. Co-authored by Claude Sonnet 4.6.
+
 ## What just landed
 
 ### Phase A leaderboard (all 10 experiments, A0-A9, completed)
