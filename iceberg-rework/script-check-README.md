@@ -1,22 +1,24 @@
 # Classical iceberg-segmentation methods: code review pack
 
-Self-contained snapshot of the segmentation scripts I would like a second pair of eyes on. Goal of this review is to confirm that the parameter choices, edge-case handling, and inter-method integration are scientifically defensible. The deep-learning training and the evaluation pipeline are out of scope here; only the per-chip segmentation logic is inside.
+The segmentation scripts I would like a second pair of eyes on. Goal of this review is to confirm that the parameter choices, edge-case handling, and inter-method integration are scientifically defensible. The deep-learning training and the evaluation pipeline are out of scope here; only the per-chip segmentation logic is inside.
 
-## Folder contents
+## Scripts under review
 
-| File | Method ID | Role |
+All scripts live in [`iceberg-rework/scripts/`](scripts/), the same directory the production pipeline runs from. The links below jump straight to the live source on GitHub. The full source of each is also pasted at the end of this README so you can read it inline without clicking through every file.
+
+| Script | Method ID | Role |
 |---|---|---|
-| `_method_common.py` | (shared) | Provenance writers + skip-reason constants imported by every method script |
-| `threshold_tifs.py` | TR | Fixed B08 NIR threshold on raw chip |
-| `threshold_masked_tifs.py` | TR (NDWI) | Same threshold but restricted to NDWI > 0 open-water pixels (sensitivity branch) |
-| `otsu_threshold_tifs.py` | OT | Per-chip Otsu threshold on raw B08 |
-| `tophat_recover.py` | TH | White top-hat post-processor stacked on any base method |
-| `densecrf_tifs.py` | UNet+CRF | DenseCRF refinement of UNet++ softmax probabilities |
-| `crf_utils.py` | (shared) | DenseCRF wrapper used by `densecrf_tifs.py` |
-| `threshold_probs.py` | UNet+TR | Fixed threshold applied to UNet++ P(iceberg) instead of B08 |
-| `otsu_probs.py` | UNet+OT | Per-chip Otsu applied to UNet++ P(iceberg) |
+| [`scripts/_method_common.py`](scripts/_method_common.py) | (shared) | Provenance writers + skip-reason constants imported by every method script |
+| [`scripts/threshold_tifs.py`](scripts/threshold_tifs.py) | TR | Fixed B08 NIR threshold on raw chip |
+| [`scripts/threshold_masked_tifs.py`](scripts/threshold_masked_tifs.py) | TR (NDWI) | Same threshold but restricted to NDWI > 0 open-water pixels (sensitivity branch) |
+| [`scripts/otsu_threshold_tifs.py`](scripts/otsu_threshold_tifs.py) | OT | Per-chip Otsu threshold on raw B08 |
+| [`scripts/tophat_recover.py`](scripts/tophat_recover.py) | TH | White top-hat post-processor stacked on any base method |
+| [`scripts/densecrf_tifs.py`](scripts/densecrf_tifs.py) | UNet+CRF | DenseCRF refinement of UNet++ softmax probabilities |
+| [`scripts/crf_utils.py`](scripts/crf_utils.py) | (shared) | DenseCRF wrapper used by `densecrf_tifs.py` |
+| [`scripts/threshold_probs.py`](scripts/threshold_probs.py) | UNet+TR | Fixed threshold applied to UNet++ P(iceberg) instead of B08 |
+| [`scripts/otsu_probs.py`](scripts/otsu_probs.py) | UNet+OT | Per-chip Otsu applied to UNet++ P(iceberg) |
 
-The full source of each file is also pasted at the bottom of this README so you can read it inline without opening the folder.
+If you want to leave inline edits, the GitHub web UI lets you click the pencil icon on any file page to propose a change in a new branch and pull request.
 
 ## Project context
 
@@ -114,14 +116,14 @@ chip .tif  (B04/B03/B08, 10 m)
 
 ## Provenance
 
-- Snapshot taken at git commit `99c2684` on branch `paper-figures-and-results`.
-- Originals live at `iceberg-rework/scripts/` in the project repo. The copies in this folder are kept verbatim except for one added module docstring at the top of `crf_utils.py`.
+- Branch: `paper-figures-and-results`. Live scripts under [`iceberg-rework/scripts/`](scripts/).
+- The inline source pasted at the end of this README is a read-through copy of the live scripts at the time of the last commit to this README. If you are about to leave a comment on a specific line, prefer clicking through to the live file via the table above so the line numbers match.
 
 ---
 
 # Inline source code
 
-The full source of each script is included below for read-through. Click a heading to expand.
+The full source of each script is pasted below as a single read-through. The same code is in the live files linked in the [Scripts under review](#scripts-under-review) table. Click a heading to expand.
 
 <details>
 <summary><strong>_method_common.py</strong> (shared helpers, 124 lines)</summary>
