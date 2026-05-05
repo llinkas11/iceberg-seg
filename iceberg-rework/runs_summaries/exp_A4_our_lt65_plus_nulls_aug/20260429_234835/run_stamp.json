@@ -1,0 +1,13 @@
+{
+  "experiment_id": "exp_A4_our_lt65_plus_nulls_aug",
+  "baseline_id": "baseline_v1",
+  "config_sha": "3f0fae3b7498749b50cbb8c2256bdf7b60eb175004c2d64b81acd4c25f625359",
+  "run_utc": "2026-04-30T03:51:41+00:00",
+  "stages_run": [
+    "manifest",
+    "balance",
+    "train",
+    "infer",
+    "evaluate"
+  ]
+}

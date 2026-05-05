@@ -1,0 +1,12 @@
+{
+  "experiment_id": "exp_A6_our_lt65_plus_nulls_aug_adaptive",
+  "baseline_id": "baseline_v1",
+  "config_sha": "46640a614567e79fe9561b7f5db4269c522f4d960a107dc77c88a5a8a9c32838",
+  "run_utc": "2026-04-29T03:47:01+00:00",
+  "stages_run": [
+    "manifest",
+    "train",
+    "infer",
+    "evaluate"
+  ]
+}

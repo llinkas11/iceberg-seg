@@ -34,8 +34,8 @@ memory/
 # Root-level data (audio, zips, CSVs too large or irrelevant to code)
 data/
 
-# Third-party papers (copyrighted PDFs)
-papers/
+# Third-party papers - INCLUDED in archive (private repo only; do NOT make public)
+# papers/
 
 # Personal screenshots / reference images
 images/
@@ -53,11 +53,13 @@ S2-iceberg-areas/sentinel2_downloads/
 S2-iceberg-areas/_archive/
 S2-iceberg-areas/S2UnetPlusPlus/
 S2-iceberg-areas/roboflow_manual_upload_*/
-S2-iceberg-areas/*.onnx
-S2-iceberg-areas/*.onnx.data
+# Note: ONNX, GPKG, .pth in S2-iceberg-areas/ are LFS-tracked via .gitattributes.
+# Sidecar SQLite WAL files are not.
+# S2-iceberg-areas/*.onnx       <- LFS-tracked
+# S2-iceberg-areas/*.onnx.data  <- LFS-tracked
+# S2-iceberg-areas/*.gpkg       <- LFS-tracked
 S2-iceberg-areas/*.pth
 S2-iceberg-areas/*.ckpt
-S2-iceberg-areas/*.gpkg
 S2-iceberg-areas/*.gpkg-shm
 S2-iceberg-areas/*.gpkg-wal
 
@@ -72,14 +74,15 @@ roboflow/roboflow_examples/
 roboflow/previews/
 roboflow/locator_maps/
 
-# Paper-writing bulk assets (keep markdown, drop PDFs and the overleaf binary copy)
+# Paper-writing: include Overleaf source + reference PDFs in archive
 paper-writing/_archive/
-paper-writing/overleaf/
-paper-writing/*.pdf
+# paper-writing/overleaf/  <- INCLUDED for reproducibility
+# paper-writing/*.pdf      <- INCLUDED (journal style guide)
+paper-writing/figure_review/   # intermediate review materials, not final
 
 # Retired figure versions (keep only the latest in fig-archive/)
 paper-writing/figures/fig-archive/_archive/
-paper-writing/figure_review/results_figs_table_previews/
+paper-writing/overleaf/2026-04-17_template-plan-md/figures/fig-archive/_archive/
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Large generic binary extensions (catch-all)
@@ -100,3 +103,6 @@ paper-writing/figure_review/results_figs_table_previews/
 *.wav
 *.docx
 *.pptx
+# Allow specific archive items
+!paper-writing/IDS2026_intro_methods_updated.docx
+

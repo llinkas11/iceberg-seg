@@ -1,0 +1,15 @@
+{
+  "method": "UNet_CRF_TH",
+  "base_method": "UNet_CRF",
+  "base_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_baseline_v1/20260424_185158/inference/sza_lt65/UNet_CRF",
+  "chips_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/data/v4_clean/test_chips/sza_lt65",
+  "se_radius": 10,
+  "th_thresh": 0.05,
+  "min_area_px": 16,
+  "n_chips_processed": 57,
+  "n_polygons_base": 8818,
+  "n_polygons_recov": 6518,
+  "n_polygons_total": 15336,
+  "git_sha": null,
+  "created_utc": "2026-04-30T04:05:19+00:00"
+}

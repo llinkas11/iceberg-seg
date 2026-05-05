@@ -1,0 +1,13 @@
+{
+  "git_sha": null,
+  "method": "UNet_TR",
+  "out_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_baseline_v1/20260424_185158/inference/sza_gt75/UNet_TR",
+  "params": {
+    "iceberg_band": 1,
+    "min_area_m2": 100.0,
+    "probs_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_baseline_v1/20260424_185158/inference/sza_gt75/UNet/probs",
+    "threshold": 0.22
+  },
+  "run_kind": "inference_method",
+  "run_utc": "2026-04-26T15:56:44+00:00"
+}

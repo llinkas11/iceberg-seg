@@ -1,0 +1,15 @@
+{
+  "method": "TR_TH",
+  "base_method": "TR",
+  "base_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_baseline_v1/20260424_185158/inference/sza_70_75/TR",
+  "chips_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/data/v4_clean/test_chips/sza_70_75",
+  "se_radius": 10,
+  "th_thresh": 0.05,
+  "min_area_px": 16,
+  "n_chips_processed": 57,
+  "n_polygons_base": 2599,
+  "n_polygons_recov": 3038,
+  "n_polygons_total": 5637,
+  "git_sha": null,
+  "created_utc": "2026-04-30T04:06:59+00:00"
+}

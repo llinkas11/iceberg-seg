@@ -1,0 +1,12 @@
+{
+  "experiment_id": "exp_baseline_v1_raw",
+  "baseline_id": "baseline_v1",
+  "config_sha": "7950e375be45a09dbcd0fa5089a39bd1c6ea27c494ec86ecde40e5926d7fbbbb",
+  "run_utc": "2026-04-28T13:40:27+00:00",
+  "stages_run": [
+    "manifest",
+    "train",
+    "infer",
+    "evaluate"
+  ]
+}
