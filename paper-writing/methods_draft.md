@@ -52,7 +52,7 @@ The combined dataset is `v4_clean`, materialised at `data/v4_clean/manifest.json
 
 Two annotation sources contribute:
 
-1. Fisser and others (2024) pickled masks: 398 chips at SZA < 65 from Kangerlussuaq Fjord, with three-class polygon annotations (ocean, iceberg, shadow). Shadow is merged into iceberg before any analysis (see Section 2.6). 330 of these chips survive the 40 m + IC filters.
+1. Fisser and others (2025) pickled masks: 398 chips at SZA < 65 from Kangerlussuaq Fjord, with three-class polygon annotations (ocean, iceberg, shadow). Shadow is merged into iceberg before any analysis (see Section 2.6). 330 of these chips survive the 40 m + IC filters.
 2. Roboflow-annotated chips: 586 chips at SZA > 65 across both fjords, with single-class iceberg annotations using the SAM3 smart-select tool followed by manual correction. All 586 contribute to v4_clean.
 
 Splits in v4_clean target 65 / 15 / 25 train/val/test. The effective split is 551 / 137 / 228 because the test set is capped at 57 chips per SZA bin (228 = 57 x 4) for cross-bin metric balance. Within v4_clean training, 193 chips received annotation-aware IC masking. The class distribution is binary: ocean 94.4 % / iceberg 5.6 % at the pixel level.
