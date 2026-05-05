@@ -133,6 +133,21 @@ Not yet tested. Update this section after first Overleaf recompile.
   `runs/exp_A0_fisser_lt65_original/20260428_094028/`, and
   `runs/exp_A2_our_lt65/20260428_094654/` per_iceberg/ outputs.
 
+## Changes (2026-05-05)
+
+- Added a "Supplementary material" section before Acknowledgements, declaring
+  Fig. S1 (`figS01_otsu_floor_distribution`): per-chip Otsu threshold
+  distribution on Sentinel-2 B08 over all 23,981 study chips, with skip-rates
+  at floors 0.10 / 0.15 / 0.20 (6.08 % / 41.02 % / 50.54 %) and the
+  noise-floor spike from the L1C +0.10 offset.
+- Expanded the OT method paragraph in §3 to cite Fig. S1 and justify the
+  0.10 floor in offset-uncorrected reflectance over the alternative 0.20
+  (offset-corrected) interpretation.
+- Source script for Fig. S1:
+  `iceberg-rework/scripts/script_check_answers/q07_otsu_floor_distribution.py`.
+  Output PNG archived under
+  `paper-writing/figure_review/script_check_answers/q07_otsu_floor_distribution/`.
+
 ## Next steps
 
 1. Deploy to Overleaf and confirm clean compile.

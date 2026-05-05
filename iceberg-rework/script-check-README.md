@@ -64,7 +64,6 @@ The questions below are deliberately specific. If anything looks fine, a one-lin
 ### `otsu_threshold_tifs.py` (OT)
 
 - **Otsu on raw B08.** No log-transform, no contrast stretch, no exclusion of saturated pixels. Otsu finds the threshold maximising inter-class variance on the chip's 256 x 256 pixel histogram. For ocean-dominated chips the histogram is highly skewed; does Otsu still give a sensible threshold, or should we be doing a log-transform first?
-- **Flat-chip floor.** `min_otsu_thresh = 0.10`. Chips where Otsu returns a threshold below 0.10 are skipped. The floor exists because a featureless ocean chip will let Otsu find a "threshold" near zero on noise. Is 0.10 the right floor in offset-uncorrected reflectance, or should it be 0.20 (i.e. 0.10 after the +0.10 offset)?
 - **IC filter on the Otsu result.** Same 15 % rule as TR but evaluated against the Otsu threshold for that chip. Order of operations: compute Otsu, then test whether 15 % of pixels exceed it. Is this the right order, or should the IC test be against a fixed reference threshold so that "sea ice contamination" means the same thing across chips?
 - **Visualisation.** Three-panel diagnostic PNG (false-color RGB, B08 histogram with threshold marked, mask overlay). Used for QA only, not in the area pipeline. Any obvious thing missing from the QA panel?
 
