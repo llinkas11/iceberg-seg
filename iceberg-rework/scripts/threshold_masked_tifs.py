@@ -38,8 +38,9 @@ NIR_THRESHOLD  = 0.22   # Fisser 2024 B08 threshold (0.12) + 0.10 DN offset corr
                         # All scenes baseline ≥4.0: chip_sentinel2.py does not subtract +1000 DN offset
 NDWI_THRESHOLD = 0.0    # NDWI > 0 → open water (negative = ice/land/cloud)
 MIN_AREA_M2    = 100    # ~10×10 m minimum polygon
-IC_THRESHOLD   = 0.15   # Fisser 2025 IC block filter: skip chip if >15% of pixels exceed NIR threshold
+IC_THRESHOLD   = 0.15   # Fisser 2024 IC block filter: skip chip if >15% of pixels exceed NIR threshold
                         # Flags chips dominated by sea ice rather than open water with icebergs
+                        # Original Fisser rule: 10 km block; we apply at 2.56 km chip level (pre-tiled chips)
 
 
 def apply_masked_threshold(
@@ -85,7 +86,7 @@ def apply_masked_threshold(
         b03 = chip[b03_idx]
         b08 = chip[b08_idx]
 
-        # IC block filter (Fisser 2025): skip sea-ice-dominated chips
+        # IC block filter (Fisser 2024): skip sea-ice-dominated chips
         ic_frac = float((b08 >= nir_threshold).mean())
         if ic_frac > ic_threshold:
             print(
