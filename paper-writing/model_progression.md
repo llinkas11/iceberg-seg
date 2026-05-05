@@ -75,12 +75,18 @@ Notes:
 
 ---
 
-## Phase B: method progression (all SZA bins, Phase A winner)
+## Phase B: method progression (Phase A winner)
 
-Once Phase A selects a dataset (most likely A4, A5, or A6), we freeze it and
-sweep the six methods over all four SZA bins. Every row shares the same
-trained UNet checkpoint and the same test chips; only the post-processing
-differs. One training run, six reports.
+Once Phase A selects a dataset, we freeze it and sweep the six methods. Every
+row shares the same trained UNet checkpoint and the same test chips; only the
+post-processing differs. One training run, six reports.
+
+The original Phase B (Slurm 20260503) ran on the A0 checkpoint over the
+`sza_lt65` test split only, because Phase A itself was lt65-scoped. The
+2026-05-05 follow-up (Slurm 60296, 60297) re-runs the same six-method sweep
+with both A0 and A1 backbones over all four SZA bins on the v4_clean test
+split; see "Higher-SZA generalisation and backbone re-eval" below for the
+backbone comparison.
 
 | # | Method                      | What varies vs prior step       | Motivation                                                                                                                         | YAML                              |
 |---|-----------------------------|----------------------------------|------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------|
@@ -129,6 +135,21 @@ progression step. Each panel is:
 
 This collapses the progression story into one full-page figure a reader can
 scan without reading prose.
+
+---
+
+## Higher-SZA generalisation and backbone re-eval (added 2026-05-05)
+
+Both Phase A and the original Phase B were `sza_lt65`-scoped (manifests v4_raw_lt65* and v4_clean_lt65* contain only lt65 chips). Three follow-up runs on moosehead (Slurm 60293, 60296, 60297) re-evaluate every Phase A checkpoint and re-run Phase B with two different backbones across all four SZA bins on the unifying v4_clean test split. Full tables (T1 per-bin x A0..A9, T2 best non-A0 per bin, T3 A0 vs A1 Phase B, T4 recommended pipeline) live in `shib_end_to_end/phase_a_higher_sza_t1_t4.md`.
+
+Headline findings:
+
+- **A1 wins every higher-SZA bin** on both per-pair IoU and per-pair root-length MAE (T1, T2). A0 still wins lt65. The 29 GT-zero chips that distinguish A1 from A0 act as a regulariser on bins the model never saw at training: A1's mean MAE across the three higher-SZA bins is 28.01 m vs A0's 33.33 m, a 16% reduction.
+- **The published lt65 headline (A0 + UNet_OT, 8.18 m MAE) reproduces** within rounding on the v4_clean lt65 split (8.45 m here); T3's A0 + UNet_OT lt65 cell is the canonical comparison.
+- **A1 + UNet_CRF is the strongest single-backbone-single-method pipeline across all four bins** when the goal is one method that works everywhere; it wins 3 of 4 bins on MAE among learned methods (lt65 loses to A0 + UNet_OT but is competitive at 14.02 m MAE) and keeps n high (350-494 in higher bins) where TR's coverage drops to n=126 at sza_70_75.
+- A0 + UNet_OT (lt65) and A1 + UNet_CRF (higher SZA) is the per-bin-best combination if the paper allows different methods per bin. T4 in the new artifact lays out both options.
+
+These results do not change Phase A's lt65 winner (still A0); they extend the model-selection story to higher SZA bins that Phase A could not previously address.
 
 ---
 

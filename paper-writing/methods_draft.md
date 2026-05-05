@@ -71,6 +71,10 @@ Augmentation is on by default in baseline_v1: random horizontal flip, random ver
 
 Training is launched via `slurm/baseline_v1.slurm` under the environment variable `ICEBERG_EXPERIMENT=1`. Under that flag the training script refuses to run without an explicit `--seed`, so every published checkpoint is reproducible. The seed (default 42) propagates to Python, NumPy, Torch CPU and CUDA, and the cuDNN deterministic flag.
 
+### Backbone selection across SZA bins
+
+Phase A (Section 2.13) trained ten backbones on `sza_lt65` chips alone. The 2026-05-05 follow-up evaluates each backbone against the unifying `v4_clean` test split for all four SZA bins (full tables in `shib_end_to_end/phase_a_higher_sza_t1_t4.md`). A0 (Fisser preprocessing, no GT-zero chips) wins `sza_lt65` cleanly (per-pair IoU 0.710, root-length MAE 10.99 m), but loses every higher-SZA bin to A1 (Fisser preprocessing plus 29 GT-zero chips). Aggregated across `sza_65_70`, `sza_70_75`, and `sza_gt75`, A1 has mean per-pair MAE 28.01 m versus A0's 33.33 m, a 16 per cent reduction. Re-running the six-method Phase B sweep (Section 2.7-2.9) with the A1 backbone shows that A1 + UNet_CRF wins three of four SZA bins on root-length MAE among the learned methods (lt65 still favours A0 + UNet_OT at 8.45 m). The paper's headline (A0 + UNet_OT, lt65) survives; the new finding is that A1 + UNet_CRF is the strongest single-backbone-single-method pipeline when the comparison extends to higher SZA bins.
+
 ## 2.7 Fixed NIR Threshold (TR)
 
 The fixed-threshold method applies a chip-wide cutoff of B08 >= 0.22 to each test chip, classifying pixels above the threshold as iceberg. This corresponds to Fisser and others (2024)'s calibrated value of 0.12 in offset-corrected reflectance space, adjusted for the +0.10 uniform offset in our pipeline (Section 2.2). The threshold is applied independently per chip with no spatial context. Connected components smaller than 100 m$^2$ are discarded.
