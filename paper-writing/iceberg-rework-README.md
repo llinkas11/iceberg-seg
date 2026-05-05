@@ -207,7 +207,7 @@ Fisser's three-class masks (ocean, iceberg, shadow) are reduced to binary by rem
 Connected components smaller than 16 pixels (1,600 m$^2$, 40 m root length) are removed. Matches Fisser (2025) dataset minimum.
 
 ### Annotation-aware IC filtering
-IC = fraction of non-annotated pixels with B08 >= 0.22. Training chips with IC >= 15 % have bright non-annotated pixels masked to zero. Validation and test never masked. 193 training chips were masked in the v4_clean build. Justification: `reference/b08_analysis_results_discussion.md` sections 3.1-3.6.
+IC = fraction of non-annotated pixels with B08 >= 0.22. Training chips with IC >= 15 % have bright non-annotated pixels masked to zero. Validation and test never masked. 193 training chips were masked in the v4_clean build. Justification: `reference/b08_analysis_results_discussion.md` sections 3.1-3.6. Sensitivity sweep across the full 23,981-chip pool at IC cutoffs in {10, 15, 20, 25, 30}% is summarised in `methods_draft.md` Section 2.14 and stored under `figure_review/script_check_answers/q01_ic_cutoff_sweep/`.
 
 ### DN offset
 Reflectances are +0.10 high relative to Fisser's space because chip_sentinel2.py applies the 10$^{-4}$ scaling without subtracting the 1000 DN N0500 offset. Fisser's 0.12 = our 0.22. Internal consistency holds because every chip shares the offset.
