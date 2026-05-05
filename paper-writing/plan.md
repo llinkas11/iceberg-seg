@@ -430,3 +430,22 @@ ssh moosehead 'tail -f /mnt/research/.../iceberg-rework/logs/exp/ice_exp_<job_id
    - Whether to materialise variant manifests (`fisser_lt65_original`, `our_lt65`, `our_lt65_plus_nulls`).
    - Whether to start Phase B reporting on baseline_v1 results.
 7. The figure registry is the canonical place to add any new plot. Use `_fig_registry.write` for plots and `_fig_registry.write_table` for tables-as-PNGs.
+
+---
+
+## Pending: trim the script-check pack after Farias review
+
+The script-check pack at `iceberg-rework/script-check-README.md` was originally written to send all 23 per-script questions to the external reviewer (Farias). Five of those questions (Q1, Q7, Q15, Q16, Q17) have since been answered empirically in this project, with figures and CSVs under `paper-writing/figure_review/script_check_answers/<slug>/` and a written summary in `methods_draft.md` Section 2.14.
+
+Once Farias has finished reviewing the pack, do the following so future readers see only the open questions:
+
+1. In `iceberg-rework/script-check-README.md`, delete the bullet for each answered question (Q1, Q7, Q15, Q16, Q17) and its `*Pre-checked* ...` sub-bullet. Leave a one-line pointer at the section level (or in the README header) noting that the answered set is documented in `paper-writing/methods_draft.md` Section 2.14 and `paper-writing/figure_review/script_check_answers/`.
+2. In each affected production script, add a brief inline comment at the parameter that was checked, summarising the empirical justification. The five spots are:
+   - `iceberg-rework/scripts/threshold_tifs.py`, at `ic_threshold = 0.15`: `# Q1 sweep (n=23,981) confirmed 15% sits in the slow middle of the ic_frac ECDF; moving to 0.20 / 0.30 buys only a few percent. See paper-writing/figure_review/script_check_answers/q01_ic_cutoff_sweep/.`
+   - `iceberg-rework/scripts/otsu_threshold_tifs.py`, at `min_otsu_thresh = 0.10`: `# Q7 confirmed 0.10 floor: 6.1% of chips skip; raising to 0.15 jumps to 41% (would discard half the population). See .../q07_otsu_floor_distribution/.`
+   - `iceberg-rework/scripts/threshold_probs.py`, at `threshold = 0.22`: `# Q15 test-split sensitivity (n=171): F1 climbs to 0.528 at tau=0.90 vs 0.464 at 0.22 (delta +0.064). Calibration deferred until val probs exist. See .../q15_unet_threshold_f1/.`
+   - `iceberg-rework/scripts/otsu_probs.py`, at the `range_p < 0.01` flat-prob skip: `# Q16 confirmed: 0% would-skip at every cutoff in {0.005, 0.01, 0.02, 0.05}; guard is non-binding on this population. See .../q16_flat_prob_distribution/.`
+   - `iceberg-rework/scripts/otsu_probs.py`, at the no-floor branch: `# Q17 ruled out a 0.5 floor: 100% of chips have Otsu < 0.5; floor would activate everywhere and remove 22.5% of iceberg pixels. See .../q17_otsu_on_prob_floor/.`
+3. Keep the answer scripts under `iceberg-rework/scripts/script_check_answers/` and the artifact folders under `paper-writing/figure_review/script_check_answers/` so the reasoning is reproducible. The checklist row in `paper-writing/figure_review/figure_review_checklist.csv` for each answered slug stays at status `draft` with the headline finding in `needed_edits` until the figure is incorporated into the deck.
+
+Do NOT remove the answered questions from the README before the reviewer has read it; they are the asked-and-answered evidence the reviewer needs to see to know we did our own due diligence.
