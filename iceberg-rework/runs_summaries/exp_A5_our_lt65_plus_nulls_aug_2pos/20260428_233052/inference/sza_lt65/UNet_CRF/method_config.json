@@ -1,0 +1,20 @@
+{
+  "git_sha": null,
+  "method": "UNet_CRF",
+  "out_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_A5_our_lt65_plus_nulls_aug_2pos/20260428_233052/inference/sza_lt65/UNet_CRF",
+  "params": {
+    "chips_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/data/v4_clean_lt65_plus_nulls/test_chips/sza_lt65",
+    "crf": {
+      "compat_bilateral": 4,
+      "compat_gaussian": 3,
+      "iterations": 5,
+      "srgb_bilateral": 3,
+      "sxy_bilateral": 40,
+      "sxy_gaussian": 3
+    },
+    "min_area_m2": 100.0,
+    "probs_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_A5_our_lt65_plus_nulls_aug_2pos/20260428_233052/inference/sza_lt65/UNet/probs"
+  },
+  "run_kind": "inference_method",
+  "run_utc": "2026-04-29T03:36:18+00:00"
+}

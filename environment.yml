@@ -1,0 +1,32 @@
+# Conda environment for iceberg-seg.
+# Mirrors requirements.txt with conda-friendly geospatial deps.
+# PyTorch is pulled from the appropriate index URL; CUDA 12.1 by default.
+name: iceberg-unet
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - rasterio
+  - geopandas
+  - shapely
+  - numpy
+  - pandas
+  - matplotlib
+  - scikit-image
+  - scipy
+  - pyyaml
+  - pip:
+      - --index-url https://download.pytorch.org/whl/cu121
+      - torch
+      - torchvision
+      - --index-url https://pypi.org/simple
+      - segmentation-models-pytorch
+      - pydensecrf2
+      - fastapi==0.115.0
+      - uvicorn[standard]==0.30.0
+      - sqlalchemy==2.0.36
+      - pydantic==2.9.2
+      - python-multipart==0.0.12
+      - aiofiles==24.1.0

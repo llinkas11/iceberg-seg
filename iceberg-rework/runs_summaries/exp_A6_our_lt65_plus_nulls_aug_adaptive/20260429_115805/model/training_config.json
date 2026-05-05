@@ -1,0 +1,27 @@
+{
+  "args": {
+    "batch_size": 16,
+    "data_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_A6_our_lt65_plus_nulls_aug_adaptive/20260429_115805/balanced",
+    "encoder": "resnet34",
+    "epochs": 100,
+    "lr": 0.0001,
+    "mode": "s2",
+    "no_augment": false,
+    "no_pretrain": false,
+    "out_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_A6_our_lt65_plus_nulls_aug_adaptive/20260429_115805/model",
+    "seed": 42,
+    "workers": 4
+  },
+  "experiment_mode": true,
+  "git_sha": null,
+  "manifest_id": "v4_clean_lt65_plus_nulls",
+  "metrics": {
+    "best_val_iou": 0.23685741424560547,
+    "test_iou": 0.3118145937720935,
+    "test_loss": 1.7185866634051006
+  },
+  "reproducible": true,
+  "run_kind": "training",
+  "run_started_utc": "2026-04-29T16:00:00+00:00",
+  "script": "train.py"
+}

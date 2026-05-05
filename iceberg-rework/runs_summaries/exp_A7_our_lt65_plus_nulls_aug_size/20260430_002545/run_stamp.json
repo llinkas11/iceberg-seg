@@ -1,0 +1,13 @@
+{
+  "experiment_id": "exp_A7_our_lt65_plus_nulls_aug_size",
+  "baseline_id": "baseline_v1",
+  "config_sha": "4b76f5876f3cb43147c397ba099e837ac018c16f40986d2c148bac59083e9206",
+  "run_utc": "2026-04-30T04:29:41+00:00",
+  "stages_run": [
+    "manifest",
+    "balance",
+    "train",
+    "infer",
+    "evaluate"
+  ]
+}
