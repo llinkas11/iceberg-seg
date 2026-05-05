@@ -1,8 +1,8 @@
 # Iceberg Segmentation Pipeline: Project State
 
-**Status:** Refactor complete (Phases 1-6). v4_clean dataset built and frozen. baseline_v1 trained and evaluated. Phase A 2x3 grid (size balance x class balance) registered as 10 YAMLs, runner ready. Phase B method sweep is a single inference dispatch on the trained checkpoint, runner ready. Per-pair MAE + IoU tables published for the canonical baseline.
+**Status:** Refactor complete (Phases 1-6). v4_clean dataset built and frozen. baseline_v1 trained and evaluated. Phase A 2x3 grid (size balance x class balance) registered as 10 YAMLs, runner ready. Phase B method sweep is a single inference dispatch on the trained checkpoint, runner ready. Per-pair MAE + IoU tables published for the canonical baseline. **2026-05-05 addendum:** Phase A re-eval on all four SZA bins and Phase B backbone comparison (A0 vs A1) complete; A1 wins higher-SZA bins, A0 still wins lt65, A1 + UNet_CRF is the strongest single-pipeline option across all bins. See `shib_end_to_end/phase_a_higher_sza_t1_t4.md` for T1-T4.
 
-**Last verified:** 2026-04-27.
+**Last verified:** 2026-05-05.
 **Latest git commit:** `7f8b100` on `main`, github.com/llinkas11/iceberg-seg.
 **Authoritative state:** this file.
 **Methodology:** `methods_draft.md`.

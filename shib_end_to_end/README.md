@@ -9,7 +9,9 @@
 
 ## Overview
 
-This document is the authoritative record of all experimental work completed for the independent study. It covers Phase A (dataset progression, A0 winner selection, C1/C2 ablation), Phase B (6-method sweep on the A0 checkpoint), per-iceberg evaluation metrics, and the Fisser (2024) comparison attempt. All numbers are confirmed from actual script output.
+This document is the authoritative record of all experimental work completed for the independent study. It covers Phase A (dataset progression, A0 winner selection, C1/C2 ablation), Phase B (6-method sweep on the A0 checkpoint), per-iceberg evaluation metrics, the Fisser (2024) comparison attempt, and (added 2026-05-05) the Phase A higher-SZA re-eval and the A0-vs-A1 Phase B backbone comparison. All numbers are confirmed from actual script output.
+
+For the higher-SZA re-eval (T1, T2) and the backbone comparison (T3, T4), see `phase_a_higher_sza_t1_t4.md`. Headline: A1 wins every higher-SZA bin on both IoU and root-length MAE, while A0 still wins lt65; A1 + UNet_CRF is the strongest single-pipeline option across all four SZA bins.
 
 **The paper's core claim:** UNet++ + Otsu post-processing achieves root-length MAE of 8.18 m and +4.9% relative area error on the >100 m iceberg subset at SZA < 65°, compared to the B08 threshold method at 17.05 m MAE and -33% RE under the same automated pipeline conditions. Fisser (2024) reported ±5.7% RE for the threshold method under manually curated conditions.
 
@@ -233,6 +235,12 @@ The Fisser ±5.7% is cited as motivation (published TR baseline under ideal cond
 | TR RE% on >100 m (IC filter off) | -29.5% | fisser_validation, 20260503 |
 | IC filter skip rate (lt65 test) | 68% | threshold sweep, 20260503 |
 | Fisser (2024) published at lt65 | -5.7% to +5.9% | Fisser et al. 2024, Ann. Glaciol. |
+| A1 mean MAE (3 higher-SZA bins) | 28.01 m | re_eval_v4_clean, 20260505 |
+| A0 mean MAE (3 higher-SZA bins) | 33.33 m | re_eval_v4_clean, 20260505 |
+| A0 + UNet_OT, lt65 (v4_clean split) | 8.45 m, IoU 0.733 | re_phase_b_v4_clean A0, 20260505 |
+| A1 + UNet_CRF, sza_65_70 | 10.91 m, IoU 0.633 | re_phase_b_v4_clean A1, 20260505 |
+| A1 + UNet_CRF, sza_70_75 | 12.11 m, IoU 0.610 | re_phase_b_v4_clean A1, 20260505 |
+| A1 + UNet_CRF, sza_gt75 | 22.60 m, IoU 0.564 | re_phase_b_v4_clean A1, 20260505 |
 
 ---
 
