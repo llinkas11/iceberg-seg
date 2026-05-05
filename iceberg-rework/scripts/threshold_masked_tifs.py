@@ -36,7 +36,11 @@ warnings.filterwarnings("ignore")
 
 NIR_THRESHOLD  = 0.22   # Fisser 2024 B08 threshold (0.12) + 0.10 DN offset correction
                         # All scenes baseline ≥4.0: chip_sentinel2.py does not subtract +1000 DN offset
-NDWI_THRESHOLD = 0.0    # NDWI > 0 → open water (negative = ice/land/cloud)
+NDWI_THRESHOLD = 0.0    # McFeeters 1996 default. Fisser 2024 does not use NDWI;
+                        # this is a chip-level land-edge safeguard. KQ sweep
+                        # (sweep_ndwi_threshold.py) shows raising to 0.05 cuts
+                        # 21% of total iceberg area (26% at SZA > 75°) by killing
+                        # iceberg-water mixed pixels, not land edges, so 0 stays.
 MIN_AREA_M2    = 100    # ~10×10 m minimum polygon
 IC_THRESHOLD   = 0.15   # Fisser 2025 IC block filter (eq. 2): skip chip if >15% of pixels exceed NIR threshold
                         # Flags chips dominated by sea ice rather than open water with icebergs

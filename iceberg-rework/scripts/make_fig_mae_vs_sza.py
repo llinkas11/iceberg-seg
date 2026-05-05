@@ -36,13 +36,17 @@ SZA_LABELS = {"sza_lt65": "< 65", "sza_65_70": "65 to 70",
               "sza_70_75": "70 to 75", "sza_gt75": "> 75"}
 
 METHOD_ORDER = ["TR", "OT", "UNet", "UNet_TR", "UNet_OT", "UNet_CRF"]
+
+# Harmonized with Fig. 7 / Fig. 9: cool blue-greys for non-learning, warm
+# tones for learning, with UNet_TR pink so share-a-substring methods are
+# distinguishable.
 METHOD_COLORS = {
-    "TR":       "#9E9E9E",
-    "OT":       "#607D8B",
-    "UNet":     "#1976D2",
-    "UNet_TR":  "#43A047",
-    "UNet_OT":  "#F57C00",
-    "UNet_CRF": "#D81B60",
+    "TR":       "#90A4AE",
+    "OT":       "#37474F",
+    "UNet":     "#FFB74D",
+    "UNet_TR":  "#E91E63",
+    "UNet_OT":  "#E64A19",
+    "UNet_CRF": "#7C4DFF",
 }
 METHOD_MARKERS = {
     "TR":       "o",
@@ -110,10 +114,10 @@ def main():
     n_y = data_max * 1.22
     for i, sza in enumerate(SZA_ORDER):
         ax.text(i, n_y, f"n={int(n_total[sza]):,}",
-                ha="center", va="center", fontsize=8, color="#555")
+                ha="center", va="center", fontsize=11, color="#555")
 
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12),
-              fontsize=9, ncol=6, framealpha=0.95, frameon=True)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16),
+              fontsize=11, ncol=6, framealpha=0.95, frameon=True)
 
     fig.tight_layout(rect=[0, 0.04, 1, 1])
 
