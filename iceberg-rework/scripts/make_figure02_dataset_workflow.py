@@ -46,7 +46,7 @@ def main():
     parser.add_argument("--dpi", type=int, default=300)
     args = parser.parse_args()
 
-    fig, ax = plt.subplots(figsize=(17, 7.5))
+    fig, ax = plt.subplots(figsize=(18, 8.5))
     fig.patch.set_facecolor("white")
     setup_axes(ax, xlim=(0, 120), ylim=(0, 70))
 
@@ -54,33 +54,33 @@ def main():
     src_rf = box(ax, SOURCE_X, SOURCE_RF_Y, SOURCE_W, SOURCE_H,
                   "Roboflow polygons",
                   sublabel="single-class iceberg,\nSAM3 + manual review",
-                  fill=PALETTE["panel"])
+                  fill=PALETTE["panel"], font_main=13, font_sub=10)
     src_fi = box(ax, SOURCE_X, SOURCE_FI_Y, SOURCE_W, SOURCE_H,
-                  "Fisser pkls (3-class)",
-                  sublabel="ocean / iceberg / shadow,\nSZA < 65",
-                  fill=PALETTE["panel2"])
+                  "Fisser (2024) arrays",
+                  sublabel="3-class (ocean / iceberg / shadow),\nSZA < 65",
+                  fill=PALETTE["panel2"], font_main=13, font_sub=10)
 
     # 3. Trunk operations (centred between source heights)
     op_shadow = box(ax, TRUNK_X[0], TRUNK_Y, TRUNK_W, TRUNK_H,
                      "shadow merge",
                      sublabel="class 2 -> 1\n(Fisser only)",
-                     fill=PALETTE["panel"])
+                     fill=PALETTE["panel"], font_main=13, font_sub=10)
     op_40m = box(ax, TRUNK_X[1], TRUNK_Y, TRUNK_W, TRUNK_H,
                   "40 m filter",
                   sublabel="drop CC < 16 px",
-                  fill=PALETTE["panel"])
+                  fill=PALETTE["panel"], font_main=13, font_sub=10)
     op_ic = box(ax, TRUNK_X[2], TRUNK_Y, TRUNK_W, TRUNK_H,
                  "IC pixel mask",
                  sublabel="train only,\nIC >= 15 %",
-                 fill=PALETTE["panel"])
+                 fill=PALETTE["panel"], font_main=13, font_sub=10)
 
     # 4. Three split outputs (right side)
     box(ax, SPLIT_X, SPLIT_TRAIN_Y, SPLIT_W, SPLIT_H,
-         "train  (551 chips)", fill=PALETTE["cyan"])
+         "train  (551 chips)", fill=PALETTE["cyan"], font_main=13)
     box(ax, SPLIT_X, SPLIT_VAL_Y, SPLIT_W, SPLIT_H,
-         "validation  (137 chips)", fill=PALETTE["cyan"])
+         "validation  (137 chips)", fill=PALETTE["cyan"], font_main=13)
     box(ax, SPLIT_X, SPLIT_TEST_Y, SPLIT_W, SPLIT_H,
-         "test  (228 chips)", fill=PALETTE["cyan"])
+         "test  (228 chips)", fill=PALETTE["cyan"], font_main=13)
 
     # 5. Connections: sources -> shadow merge
     arrow(ax, edge_point(src_rf, "right"),
@@ -100,36 +100,55 @@ def main():
     # 8. Bottom captions for each operation
     caption_text(ax, TRUNK_X[0], CAPTION_Y,
                   "binary targets so all\nsix methods share GT",
-                  italic=True, font_size=8)
+                  italic=True, font_size=11)
     caption_text(ax, TRUNK_X[1], CAPTION_Y,
                   "removes rasterisation\nartefacts (CC < 16 px)",
-                  italic=True, font_size=8)
+                  italic=True, font_size=11)
     caption_text(ax, TRUNK_X[2], CAPTION_Y,
                   "zeros bright non-annotated\npixels in train chips",
-                  italic=True, font_size=8)
+                  italic=True, font_size=11)
     caption_text(ax, SPLIT_X, CAPTION_Y,
                   "stratified 65 / 15 / 25;\ntest capped at 57 per bin",
-                  italic=True, font_size=8)
+                  italic=True, font_size=11)
 
     fig.suptitle("Figure 2. Dataset construction workflow",
-                  fontsize=11, weight="bold", y=0.96)
+                  fontsize=15, weight="bold", y=0.96)
     fig.tight_layout(rect=[0, 0, 1, 0.94])
 
     # 9. Route through fig registry
     caption = (
         "Dataset construction workflow. Two annotation sources are merged "
         "through three deterministic cleaning operations to produce the "
-        "binary v4_clean training, validation, and test splits. The shadow "
-        "merge applies only to Fisser chips. The IC pixel mask is applied "
-        "only to training chips with IC >= 15 %; validation and test chips "
-        "are never masked."
+        "binary v4_clean train / validation / test splits. "
+        "Sources: Roboflow polygons (single-class iceberg, SAM3 smart-select "
+        "+ manual review, SZA >= 65 deg) and Fisser (2024) arrays (3-class "
+        "ocean / iceberg / shadow numpy arrays distributed as pickle "
+        "files, SZA < 65 deg). "
+        "Cleaning operations in order: (1) shadow merge - Fisser shadow "
+        "pixels (class 2) are reclassified as iceberg (class 1) so every "
+        "chip shares the same binary target; (2) 40 m component filter - "
+        "connected components below 16 pixels (40 m root length at the "
+        "10 m Sentinel-2 ground sample distance) are dropped from both "
+        "sources to remove rasterisation artefacts and sub-resolution "
+        "annotations; (3) annotation-aware ice-coverage (IC) pixel mask - "
+        "bright non-annotated pixels in training chips whose ice-coverage "
+        "fraction is >= 15 % are zeroed before training so the model does "
+        "not learn that bright non-iceberg pixels (sea ice, melange) are "
+        "negative examples. The IC mask applies only to training chips; "
+        "validation and test chips are never masked. "
+        "Output: a stratified 65 / 15 / 25 split yielding 551 train, 137 "
+        "validation, and 228 test chips, with the test split capped at 57 "
+        "chips per SZA bin."
     )
     archive = fig_write(
         fig=fig, slug="fig02_dataset_workflow",
         caption=caption, out_dir=args.out_dir, dpi=args.dpi,
     )
+    svg_path = archive[:-4] + ".svg"
+    fig.savefig(svg_path, bbox_inches="tight")
     plt.close(fig)
     print(f"Figure written: {archive}")
+    print(f"SVG companion: {svg_path}")
 
 
 if __name__ == "__main__":

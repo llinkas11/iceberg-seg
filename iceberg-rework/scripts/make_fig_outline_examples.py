@@ -7,7 +7,8 @@ near-zero, worst-negative.
 
 Layout: 4 rows (one per SZA bin) x 3 columns (RE position).
 Each panel: B08 grayscale + GT contour (cyan, dashed) + UNet_CRF contour
-(magenta, solid). Annotations: chip stem (truncated), per-pair RE %, gt area.
+(bright purple, solid). Annotations: chip stem (truncated), per-pair
+RE %, gt area.
 
 Reads:
   <run>/per_iceberg/eval_per_iceberg.csv
@@ -35,6 +36,7 @@ import os
 
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -57,7 +59,7 @@ DEFAULT_MANIFEST = os.path.join(LLINKAS, "data/v4_clean/manifest.json")
 METHOD = "UNet_CRF"
 B08_BAND_INDEX = 3
 MIN_GT_AREA_M2 = 5000.0   # focus on visually meaningful icebergs
-CROP_PAD_PX = 25          # context margin around the matched-pair iceberg bbox (tight zoom)
+CROP_PAD_PX = 20          # context margin around the matched-pair iceberg bbox. Tightened from 25 to make outlines legible, then loosened to 20 so contours are not clipped at panel edges and have visual breathing room.
 RE_POSITIONS = ["worst_pos", "near_zero", "worst_neg"]
 RE_POSITION_TITLES = {
     "worst_pos":  "Worst overestimation",
@@ -115,7 +117,8 @@ def draw_panel(ax, b08, gt_comp, pred_comp, sza_bin, position, row):
     """Render one outline-overlay panel cropped to the matched-pair iceberg.
 
     Plots only the matched GT component (cyan dashed) and the matched
-    predicted component (magenta solid), not every iceberg in the chip.
+    predicted component (bright purple solid), not every iceberg in the
+    chip.
     """
     ax.set_xticks([])
     ax.set_yticks([])
@@ -141,12 +144,13 @@ def draw_panel(ax, b08, gt_comp, pred_comp, sza_bin, position, row):
         ax.plot(contour[:, 1], contour[:, 0],
                 color="#00BCD4", linewidth=1.6, linestyle="--", alpha=0.95)
 
-    # Pred contour: magenta solid (matched component only)
+    # Pred contour: bright purple solid (matched component only). Color
+    # matches UNet_CRF in the headline data figures (Figs. 7-9).
     if pred_comp is not None:
         pred_crop = pred_comp["mask"][r0:r1, c0:c1]
         for contour in find_contours(pred_crop.astype(np.float32), 0.5):
             ax.plot(contour[:, 1], contour[:, 0],
-                    color="#E91E63", linewidth=1.6, linestyle="-", alpha=0.95)
+                    color="#7C4DFF", linewidth=1.6, linestyle="-", alpha=0.95)
 
     # Title-strip annotation (chip stem omitted; reader-facing only).
     re_pct = float(row["re_pct"])
@@ -160,6 +164,25 @@ def draw_panel(ax, b08, gt_comp, pred_comp, sza_bin, position, row):
             fontsize=11, color="white",
             bbox=dict(boxstyle="round,pad=0.4", facecolor="black",
                       edgecolor="none", alpha=0.7))
+
+    # 10 m scale bar (Sentinel-2 ground sample distance = 10 m / pixel).
+    # Drawn in data (cropped-pixel) coords near the bottom-left so the
+    # bar's length encodes a fixed ground distance regardless of crop size.
+    H = b08_crop.shape[0] if b08 is not None else gt_crop.shape[0]
+    bar_x0 = 1.0       # 1 px from left edge
+    bar_y0 = H - 2.0   # 2 px from bottom edge (image coords: y grows downward)
+    bar_w  = 1.0       # 1 px = 10 m at Sentinel-2 GSD
+    bar_h  = 0.6
+    ax.add_patch(mpatches.Rectangle(
+        (bar_x0, bar_y0), bar_w, bar_h,
+        facecolor="white", edgecolor="black", linewidth=0.8, zorder=10,
+    ))
+    ax.text(bar_x0 + bar_w + 0.5, bar_y0 + bar_h / 2,
+            "10 m (1 px)", ha="left", va="center",
+            fontsize=9, color="white",
+            bbox=dict(boxstyle="round,pad=0.22", facecolor="black",
+                      edgecolor="none", alpha=0.75),
+            zorder=11)
 
 
 def main():
@@ -274,7 +297,7 @@ def main():
     handles = [
         plt.Line2D([0], [0], color="#00BCD4", linestyle="--", linewidth=2.0,
                    label="Reference (GT) outline"),
-        plt.Line2D([0], [0], color="#E91E63", linestyle="-", linewidth=2.0,
+        plt.Line2D([0], [0], color="#7C4DFF", linestyle="-", linewidth=2.0,
                    label=f"{args.method} predicted outline"),
     ]
     fig.legend(handles=handles, loc="lower center", ncol=2, fontsize=13,
@@ -289,7 +312,7 @@ def main():
         slug="outline_examples",
         caption=(
             "Per-SZA-bin chip examples with reference (cyan dashed) and "
-            f"{args.method} predicted (magenta) iceberg outlines, picked at "
+            f"{args.method} predicted (bright purple) iceberg outlines, picked at "
             "three per-pair RE positions: worst-positive, near-zero, "
             "worst-negative (chips with reference root length below 70 m "
             "excluded). B08 NIR backdrop, 256x256 px chips. Fisser (2024) "

@@ -36,50 +36,62 @@ DEFAULT_ARROW_KW = dict(
 
 
 def box(ax, x, y, w, h, label, *,
-        sublabel=None, fill=None, ec=None,
-        font_main=10, font_sub=8, italic_sub=True):
+        sublabel=None, fill=None, ec=None, lw=None,
+        font_main=10, font_sub=8, italic_sub=True,
+        text_color=None):
     """
     Draw a labelled rounded rectangle centred at (x, y) with size (w, h).
     Returns (cx, cy, w, h). Optional sublabel goes below the main label.
+    `lw` overrides the default border linewidth so individual boxes can be
+    drawn lighter or heavier than the pack default. `text_color` overrides
+    the default ink color for the label and sublabel.
     """
     kw = dict(DEFAULT_BOX_KW)
     if fill is not None:
         kw["facecolor"] = fill
     if ec is not None:
         kw["edgecolor"] = ec
+    if lw is not None:
+        kw["linewidth"] = lw
     rect = mpatches.FancyBboxPatch(
         (x - w / 2, y - h / 2), w, h, **kw,
     )
     ax.add_patch(rect)
 
+    color = text_color if text_color is not None else PALETTE["ink"]
     if sublabel:
         # Two stacked labels: main centred slightly above midline, sub below
         ax.text(x, y + h * 0.18, label,
                 ha="center", va="center", fontsize=font_main,
-                color=PALETTE["ink"], weight="bold")
+                color=color, weight="bold")
         ax.text(x, y - h * 0.20, sublabel,
                 ha="center", va="center", fontsize=font_sub,
-                color=PALETTE["ink"],
+                color=color,
                 style="italic" if italic_sub else "normal",
                 wrap=True)
     else:
         ax.text(x, y, label,
                 ha="center", va="center", fontsize=font_main,
-                color=PALETTE["ink"], weight="bold")
+                color=color, weight="bold")
     return x, y, w, h
 
 
 def arrow(ax, p_from, p_to, *, label=None, label_offset=(0, 1.2),
-          color=None, lw=None):
+          color=None, lw=None, connectionstyle=None):
     """
     Draw an annotated arrow from p_from = (x1, y1) to p_to = (x2, y2).
-    Optional label at midpoint, displaced by label_offset.
+    Optional label at midpoint, displaced by label_offset. `connectionstyle`
+    is forwarded to arrowprops so callers can request elbow / curved routing
+    (e.g. "angle,angleA=-90,angleB=180,rad=5") for paths that would
+    otherwise cross text.
     """
     kw = dict(DEFAULT_ARROW_KW)
     if color is not None:
         kw["color"] = color
     if lw is not None:
         kw["linewidth"] = lw
+    if connectionstyle is not None:
+        kw["connectionstyle"] = connectionstyle
     ax.annotate("", xy=p_to, xytext=p_from, arrowprops=kw)
     if label:
         mx = 0.5 * (p_from[0] + p_to[0]) + label_offset[0]

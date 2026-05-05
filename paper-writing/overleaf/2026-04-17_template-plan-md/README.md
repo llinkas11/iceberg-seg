@@ -133,6 +133,37 @@ Not yet tested. Update this section after first Overleaf recompile.
   `runs/exp_A0_fisser_lt65_original/20260428_094028/`, and
   `runs/exp_A2_our_lt65/20260428_094654/` per_iceberg/ outputs.
 
+## Changes (2026-05-05)
+
+- Implemented the four methods-section updates flagged in
+  `shib_end_to_end/README.md` ("Update methods section to reflect:
+  v4_raw_lt65 manifest, A0 as Phase B anchor, IC filter behavior, 0.22
+  threshold rationale"):
+  - §2.4 Annotation sources: added a paragraph defining v4_raw,
+    v4_raw_lt65, v4_clean_lt65, and v4_clean_lt65_plus_nulls as
+    controlled-variable companion manifests with split policy / seed
+    held constant across Phase A cells.
+  - §3.1 TR: tightened the 0.22 threshold rationale (cross-references
+    §2.2 for the +0.10 DN offset preserved through the chip pipeline)
+    and added the inference-time ice-coverage chip-skip filter
+    (drops a chip when >15 % of pixels exceed B08 ≥ 0.22; skipped
+    chips' reference icebergs counted as false negatives at
+    evaluation, not silently dropped). Distinguished operationally
+    from the training-time IC pixel mask in §2.3.
+  - §3.1 OT: noted OT inherits the same chip-skip filter as TR.
+  - §3.2 UNet++ training setup: added the A0 checkpoint description
+    (trained on v4_raw_lt65, 398 lt65 Fisser chips, identical
+    hyperparameters to baseline_v1) as the lt65 anchor for the
+    Fisser-comparable subset of the method sweep.
+  - §3.6 Experiment progression: named A0 explicitly as the Phase A
+    reference cell and as the lt65 Phase B anchor; clarified that
+    baseline_v1 carries the headline four-bin tables and A0 carries
+    the SZA <65° direct-comparison cell.
+- Numbers cross-checked against `shib_end_to_end/README.md` and
+  `shib_end_to_end/phase_a_cleanup_audit.md` (398 / 330 chip counts,
+  A0 best val IoU 0.613, 1:1 GT+ : GT0 null-injection ratio, 15 %
+  ice-coverage threshold).
+
 ## Next steps
 
 1. Deploy to Overleaf and confirm clean compile.
