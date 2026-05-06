@@ -1,0 +1,27 @@
+# A9a: A6a + size oversample (scheme_L = I + J), aug=off.
+#
+# Composes adaptive class balancing (A6a) with size oversample (A7a) on
+# the A1 manifest. Closes the no-aug A1 grid: class in {none (=A1), fixed
+# positive (=A5a), adaptive (=A6a)} crossed with size in {off, oversample}.
+
+id: exp_A9a_a1_adaptive_size
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      v4_raw_lt65_plus_nulls
+    balancing_scheme: scheme_L_adaptive_size_balanced
+  augmentation:
+    enabled: false
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A9a
+  compared_to: exp_A1_fisser_lt65_plus_nulls
+
+notes: |
+  Composition test: I + J on A1. If A8a == A9a, the GT+ majority forces both
+  composed schemes into the same direction. Same memorisation caveat as A7a
+  / A8a; A9b is the fair test of size oversample on A1.

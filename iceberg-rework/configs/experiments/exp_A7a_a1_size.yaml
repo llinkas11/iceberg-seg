@@ -1,0 +1,31 @@
+# A7a: A1 + size-only oversample balancing, aug=off.
+#
+# Re-anchors the original A7 onto the A1 manifest. Note: aug=off pairs with
+# size oversample is a known weak combination (replicated chips become
+# memorisation hazards without geometric augmentation). A7b (the aug=on
+# sibling) is the fair test of size oversample on A1; A7a is included for
+# completeness as the controlled-variable test of size oversample alone.
+
+id: exp_A7a_a1_size
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      v4_raw_lt65_plus_nulls
+    balancing_scheme: scheme_J_oversample_size_balanced
+  augmentation:
+    enabled: false
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A7a
+  compared_to: exp_A1_fisser_lt65_plus_nulls
+
+notes: |
+  Expected to underperform A7b (same scheme, aug=on) because oversampling
+  without augmentation just multiplies identical gradient updates. Kept in
+  the grid as the no-aug control; if A7a / A8a / A9a all collapse to one
+  another (as A7-A9 did in T1), that confirms size oversample saturates
+  identically regardless of class direction when aug is off.
