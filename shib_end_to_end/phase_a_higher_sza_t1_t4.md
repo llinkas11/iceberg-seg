@@ -92,12 +92,14 @@ Top-hat raises recall (n) for both TR and OT in every bin; on MAE, OT_TH improve
 
 ### UNet (argmax on backbone softmax)
 
-| bin       | A0                     | A1                     | Winner |
-|-----------|------------------------|------------------------|--------|
-| sza_lt65  | **0.710 / 10.99, n=4016** | 0.568 / 17.74, n=2954 | A0 |
-| sza_65_70 | 0.501 / 30.71, n=271   | **0.513 / 25.51, n=277** | A1 |
-| sza_70_75 | 0.484 / 32.43, n=321   | **0.500 / 26.97, n=332** | A1 |
-| sza_gt75  | 0.484 / 36.84, n=179   | **0.485 / 31.54, n=188** | A1 |
+| bin       | A0                     | A1                     | A7b                    | Winner (MAE) |
+|-----------|------------------------|------------------------|------------------------|--------------|
+| sza_lt65  | **0.710 / 10.99, n=4016** | 0.568 / 17.74, n=2954 | 0.605 / 15.90, n=2805 | A0 |
+| sza_65_70 | 0.501 / 30.71, n=271   | 0.513 / 25.51, n=277  | **0.546 / 24.50, n=261** | A7b |
+| sza_70_75 | 0.484 / 32.43, n=321   | 0.500 / 26.97, n=332  | **0.529 / 26.05, n=348** | A7b |
+| sza_gt75  | 0.484 / 36.84, n=179   | 0.485 / 31.54, n=188  | **0.519 / 31.18, n=176** | A7b |
+
+A7b sweeps the three higher-SZA bins on both metrics for the base UNet method, consistent with T1.
 
 ### UNet_TH (UNet + top-hat recovery)
 
@@ -112,12 +114,12 @@ UNet_TH tracks UNet closely; small lt65 MAE improvement (10.99 to 10.70 on A0), 
 
 ### UNet_TR (fixed threshold on backbone P(iceberg))
 
-| bin       | A0                     | A1                     | Winner |
-|-----------|------------------------|------------------------|--------|
-| sza_lt65  | **0.634 / 17.55, n=3129** | 0.458 / 31.81, n=756 | A0 |
-| sza_65_70 | **0.462 / 38.45, n=216** | 0.453 / 44.21, n=106 | A0 |
-| sza_70_75 | **0.452 / 40.06, n=218** | 0.427 / 49.11, n=68 | A0 |
-| sza_gt75  | **0.469 / 41.25, n=142** | 0.460 / 41.41, n=80 | A0 |
+| bin       | A0                     | A1                     | A7b                    | Winner (MAE) |
+|-----------|------------------------|------------------------|------------------------|--------------|
+| sza_lt65  | **0.634 / 17.55, n=3129** | 0.458 / 31.81, n=756 | 0.551 / 21.22, n=1403  | A0 |
+| sza_65_70 | **0.462 / 38.45, n=216** | 0.453 / 44.21, n=106  | 0.488 / 35.31, n=150   | A7b (close to A0) |
+| sza_70_75 | **0.452 / 40.06, n=218** | 0.427 / 49.11, n=68   | 0.457 / 39.27, n=163   | A7b (close to A0) |
+| sza_gt75  | **0.469 / 41.25, n=142** | 0.460 / 41.41, n=80   | 0.508 / 37.74, n=125   | A7b |
 
 ### UNet_TR_TH (UNet_TR + top-hat recovery)
 
@@ -132,14 +134,14 @@ A0 wins all UNet_TR variants (consistent with the base UNet_TR pattern; the thre
 
 ### UNet_OT (per-chip Otsu on backbone P(iceberg)) - published headline method
 
-| bin       | A0                     | A1                     | Winner |
-|-----------|------------------------|------------------------|--------|
-| sza_lt65  | **0.733 / 8.45, n=1392** | 0.589 / 18.30, n=569 | A0 |
-| sza_65_70 | 0.524 / 32.20, n=108   | **0.497 / 30.70, n=108** | A1 (MAE) |
-| sza_70_75 | 0.479 / 37.09, n=68    | **0.505 / 34.51, n=50** | A1 |
-| sza_gt75  | 0.509 / 33.61, n=73    | **0.508 / 26.42, n=88** | A1 |
+| bin       | A0                     | A1                     | A7b                    | Winner (MAE) |
+|-----------|------------------------|------------------------|------------------------|--------------|
+| sza_lt65  | **0.733 / 8.45, n=1392** | 0.589 / 18.30, n=569 | 0.643 / 13.24, n=816   | A0 |
+| sza_65_70 | 0.524 / 32.20, n=108   | 0.497 / 30.70, n=108  | **0.549 / 25.54, n=153** | A7b |
+| sza_70_75 | 0.479 / 37.09, n=68    | 0.505 / 34.51, n=50   | **0.511 / 31.76, n=94**  | A7b |
+| sza_gt75  | 0.509 / 33.61, n=73    | **0.508 / 26.42, n=88** | 0.530 / 28.36, n=134  | A1 (narrow MAE win) |
 
-A0 + UNet_OT on lt65 reproduces the published 8.18 m headline within rounding (8.45 m here on the v4_clean lt65 split; the original 8.18 m was on a different chip subset with a >100 m filter applied).
+A0 + UNet_OT on lt65 reproduces the published 8.18 m headline within rounding (8.45 m here on the v4_clean lt65 split; the original 8.18 m was on a different chip subset with a >100 m filter applied). A7b lifts UNet_OT recall (n) consistently over A1 and beats A1 MAE in two of three higher-SZA bins.
 
 ### UNet_OT_TH (UNet_OT + top-hat recovery)
 
@@ -152,14 +154,22 @@ A0 + UNet_OT on lt65 reproduces the published 8.18 m headline within rounding (8
 
 UNet_OT_TH approximately doubles recall vs UNet_OT in every bin (n=1392 to 2293 at lt65; n=88 to 205 at gt75 for A1). lt65 MAE worsens (8.45 to 12.97 on A0), but higher SZA bins improve substantially: 65-70 drops from 30-32 m to 14 m; 70-75 from 34-37 m to 21-24 m; gt75 from 26-34 m to 25-28 m.
 
-### UNet_CRF (DenseCRF on backbone P(iceberg))
+### UNet_CRF (DenseCRF on backbone P(iceberg)) - cross-bin pipeline candidate
 
-| bin       | A0                     | A1                     | Winner |
-|-----------|------------------------|------------------------|--------|
-| sza_lt65  | **0.619 / 11.93, n=4290** | 0.569 / 14.02, n=3290 | A0 |
-| sza_65_70 | 0.609 / 17.64, n=367   | **0.633 / 10.91, n=350** | A1 |
-| sza_70_75 | 0.597 / 17.06, n=471   | **0.610 / 12.11, n=494** | A1 |
-| sza_gt75  | 0.552 / 27.16, n=226   | **0.564 / 22.60, n=241** | A1 |
+| bin       | A0                     | A1                     | A7b                    | Winner (MAE) |
+|-----------|------------------------|------------------------|------------------------|--------------|
+| sza_lt65  | **0.619 / 11.93, n=4290** | 0.569 / 14.02, n=3290 | 0.589 / 12.24, n=3065 | A0 |
+| sza_65_70 | 0.609 / 17.64, n=367   | **0.633 / 10.91, n=350** | 0.645 / 11.80, n=339 | A1 (IoU win to A7b) |
+| sza_70_75 | 0.597 / 17.06, n=471   | **0.610 / 12.11, n=494** | 0.623 / 12.50, n=478 | A1 (IoU win to A7b) |
+| sza_gt75  | 0.552 / 27.16, n=226   | 0.564 / 22.60, n=241   | **0.581 / 22.47, n=219** | A7b |
+
+Cross-bin aggregate among the three higher-SZA bins:
+
+- A0 + UNet_CRF: mean IoU 0.586, mean MAE 20.62 m
+- A1 + UNet_CRF: mean IoU 0.602, mean MAE 15.21 m
+- **A7b + UNet_CRF: mean IoU 0.616, mean MAE 15.59 m** (highest IoU, MAE essentially tied with A1 at +0.38 m)
+
+A7b + UNet_CRF lifts higher-SZA IoU by +0.014 over A1 + UNet_CRF at the cost of +0.38 m mean MAE; on sza_gt75 it wins both metrics outright. The IoU lift is consistent across bins.
 
 ### UNet_CRF_TH (UNet_CRF + top-hat recovery)
 
@@ -186,10 +196,10 @@ Combining T3 across both backbones and all twelve methods (six base + six top-ha
 Two competing recommendations depending on what is optimised:
 
 1. **Lowest MAE per bin (table above):** A0 + UNet_OT for lt65, TR for sza_65_70 and sza_70_75, OT_TH for sza_gt75. Top-hat overtakes the base method at sza_gt75 (OT_TH 19.52 m beats OT 15.91 m... wait, OT_TH is 19.52 vs base TR 20.07; OT_TH has the lowest MAE in gt75 by a narrow margin while preserving higher recall than TR alone). The backbone choice (A0 vs A1) only matters at lt65; pixel methods dominate the higher SZA bins on raw MAE.
-2. **Best learned pipeline (single backbone, single method, robust across bins):** **A1 + UNet_CRF.** Wins 3 of 4 bins on MAE among the learned methods (lt65 loses to A0 + UNet_OT but is still competitive at 14.02 m); recall is high (n=350-494 in higher bins, vs. TR's n=126-315); IoU consistently > 0.55. UNet_CRF_TH does not improve on UNet_CRF in the cross-bin pipeline (TH degrades sza_70_75 / sza_gt75 by 5-7 m).
-3. **Best high-recall learned pipeline:** A1 + UNet_OT_TH. Approximately doubles UNet_OT recall in every bin (n=88 to 205 at gt75; n=569 to 2045 at lt65) at the cost of worsening lt65 MAE (8.45 to 12.97). Useful when the question is "how many real icebergs do we detect" rather than "how accurately do we measure the ones we matched".
+2. **Best learned pipeline (single backbone, single method, robust across bins):** **A7b + UNet_CRF** (updated 2026-05-06 with A7b Phase B re-run, Slurm 60323). Beats A1 + UNet_CRF on IoU in every higher-SZA bin (mean IoU 0.616 vs 0.602) at essentially tied MAE (mean 15.59 m vs 15.21 m, +0.38 m). Wins sza_gt75 outright on both metrics. lt65 still loses to A0 + UNet_OT (8.45 m) but A7b + UNet_CRF lt65 holds at 12.24 m / IoU 0.589, comparable to A1 + UNet_CRF lt65 (14.02 m / 0.569). UNet_CRF_TH not yet computed for A7b.
+3. **Best high-recall learned pipeline:** A1 + UNet_OT_TH. Approximately doubles UNet_OT recall in every bin (n=88 to 205 at gt75; n=569 to 2045 at lt65) at the cost of worsening lt65 MAE (8.45 to 12.97). Useful when the question is "how many real icebergs do we detect" rather than "how accurately do we measure the ones we matched". A7b + UNet_OT_TH not yet computed.
 
-The paper's existing headline (UNet_OT + A0 at lt65) survives. New contributions: (i) A1 + UNet_CRF is the strongest single-backbone-single-method pipeline across all four SZA bins; (ii) top-hat helps recall on the pixel-method floor (TR_TH, OT_TH) but does not unseat UNet_CRF as the best learned cross-bin option; (iii) the A0 backbone does not generalise to higher SZA bins (T1, T2), so the GT-zero-augmented A1 backbone is the right base for any higher-SZA paper claim that goes beyond pixel methods.
+The paper's existing headline (UNet_OT + A0 at lt65) survives. New contributions: (i) **A7b + UNet_CRF is the strongest single-backbone-single-method pipeline across all four SZA bins**; (ii) top-hat helps recall on the pixel-method floor (TR_TH, OT_TH) but does not unseat UNet_CRF as the best learned cross-bin option; (iii) the A0 backbone does not generalise to higher SZA bins (T1, T2), and even the original A1 is improved on by A7b (A1 manifest + size oversample + augmentation), so A7b is the right base for any higher-SZA paper claim that goes beyond pixel methods.
 
 ## Files produced
 
@@ -201,6 +211,8 @@ The paper's existing headline (UNet_OT + A0 at lt65) survives. New contributions
 | `iceberg-rework/slurm/re_phase_b_a0.slurm` | Slurm wrapper |
 | `iceberg-rework/scripts/re_phase_b_with_a1.sh` | Six-method Phase B sweep with A1 backbone |
 | `iceberg-rework/slurm/re_phase_b_a1.slurm` | Slurm wrapper |
+| `iceberg-rework/scripts/re_phase_b_with_a7b.sh` | Six-method Phase B sweep with A7b backbone (Slurm 60323, 7:20 wallclock) |
+| `iceberg-rework/slurm/re_phase_b_a7b.slurm` | Slurm wrapper |
 | `iceberg-rework/scripts/re_phase_b_tophat_only.sh` | Adds the six top-hat companions to both backbones (Slurm 60300, 19:18 wallclock) |
 | `iceberg-rework/slurm/re_phase_b_tophat.slurm` | Slurm wrapper for the top-hat addition |
 | `iceberg-rework/runs_summaries/exp_A{0..9}_*/<ts>/re_eval_v4_clean/per_iceberg/eval_per_iceberg_summary.csv` | T1 source CSVs |
@@ -292,10 +304,10 @@ TH is a UNet_OT booster at higher SZA: on both backbones it drops UNet_OT MAE by
 
 ## Open items
 
-- The A7b / A8b / A9b family is the new strongest non-A0 backbone for higher-SZA. Phase B has not been re-run with these new checkpoints; only T1 (UNet only) numbers exist. To extend T3 / T4 with A7b backbone, re-run the six-method Phase B sweep on one of A7b / A8b / A9b (their training sets are identical so the outputs should match).
+- ~~Phase B has not been re-run with the A7b checkpoint.~~ DONE 2026-05-06: Slurm 60323 (re_phase_b_a7b.slurm), 7:20 wallclock. T3 now includes A7b columns for the four learned-method tables; pixel methods (TR/OT) unchanged because they are backbone-independent.
 - A0 still wins lt65 by a wide margin (0.710 IoU vs A7a's 0.627). The published lt65 headline (A0 + UNet_OT, 8.45 m) survives.
 - A9b is the best per-bin IoU winner at sza_65_70 + sza_70_75 by a small margin over the size-oversample family. The A7b / A8b / A9b empirical collapse means any of the three can be chosen for downstream use; A7b is the leanest configuration (size oversample only, no class balancing on top).
-- T4 recommendation update: lt65 -> A0 + UNet_OT (8.45 m); higher SZA -> A7b + UNet_CRF if Phase B re-run is added (default), or A1 + UNet_CRF in the meantime.
-- Top-hat variants for the new A1-anchored backbones not run; would require re-running the TH addition for A7b's Phase B output.
+- T4 recommendation (revised 2026-05-06): lt65 -> A0 + UNet_OT (8.45 m); higher-SZA cross-bin -> **A7b + UNet_CRF** (mean higher-SZA IoU 0.616, mean MAE 15.59 m).
+- Top-hat variants for the A7b backbone NOT run; would require re-running the TH addition (re_phase_b_tophat_only.sh extended to include A7b's run dir) to extend T3's _TH rows. Estimated 5-10 min Slurm job.
 - Higher-SZA TR n values are low (n=126 for sza_70_75); the backbone-independent finding is real but TR's coverage trade-off matters and should be flagged in the prose. Top-hat raises TR's recall to n=190 in that bin (TR_TH) but at a 4.5 m MAE cost.
 - Original Phase B headline (UNet_OT + A0) used a >100 m filter and a different chip subset; the 8.45 m here is on the full lt65 v4_clean split (no >100 m filter). Numbers are consistent in spirit, not identical by definition.
