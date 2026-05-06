@@ -14,11 +14,11 @@ All scripts live in [`iceberg-rework/scripts/`](scripts/), the same directory th
 | [`scripts/threshold_tifs.py`](scripts/threshold_tifs.py) | TR | Fixed B08 NIR threshold on raw chip |
 | [`scripts/threshold_masked_tifs.py`](scripts/threshold_masked_tifs.py) | TR (NDWI) | Same threshold but restricted to NDWI > 0 open-water pixels (sensitivity branch) |
 | [`scripts/otsu_threshold_tifs.py`](scripts/otsu_threshold_tifs.py) | OT | Per-chip Otsu threshold on raw B08 |
-| [`scripts/tophat_recover.py`](scripts/tophat_recover.py) | TH | White top-hat post-processor stacked on any base method |
 | [`scripts/densecrf_tifs.py`](scripts/densecrf_tifs.py) | UNet+CRF | DenseCRF refinement of UNet++ softmax probabilities |
 | [`scripts/crf_utils.py`](scripts/crf_utils.py) | (shared) | DenseCRF wrapper used by `densecrf_tifs.py` |
 | [`scripts/threshold_probs.py`](scripts/threshold_probs.py) | UNet+TR | Fixed threshold applied to UNet++ P(iceberg) instead of B08 |
 | [`scripts/otsu_probs.py`](scripts/otsu_probs.py) | UNet+OT | Per-chip Otsu applied to UNet++ P(iceberg) |
+| [`scripts/tophat_recover.py`](scripts/tophat_recover.py) | TH | White top-hat post-processor stacked on any base method (results just generated; placed last for emphasis) |
 
 If you want to leave inline edits, the GitHub web UI lets you click the pencil icon on any file page to propose a change in a new branch and pull request.
 
