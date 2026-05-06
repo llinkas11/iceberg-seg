@@ -19,7 +19,7 @@ All scripts live in [`iceberg-rework/scripts/`](scripts/), the same directory th
 | [`scripts/otsu_probs.py`](scripts/otsu_probs.py) | UNet+OT | Per-chip Otsu applied to UNet++ P(iceberg) |
 | [`scripts/tophat_recover.py`](scripts/tophat_recover.py) | TH | White top-hat post-processor stacked on any base method (results just generated; placed last for emphasis) |
 
-If you want to leave inline edits, the GitHub web UI lets you click the pencil icon on any file page to propose a change in a new branch and pull request.
+To leave inline edits, the GitHub web UI lets you click the pencil icon on any file page to propose a change in a new branch and pull request.
 
 ## Project context
 
