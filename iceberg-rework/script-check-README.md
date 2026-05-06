@@ -17,19 +17,9 @@ All scripts live in [`iceberg-rework/scripts/`](scripts/), the same directory th
 | [`scripts/crf_utils.py`](scripts/crf_utils.py) | (shared) | DenseCRF wrapper used by `densecrf_tifs.py` |
 | [`scripts/threshold_probs.py`](scripts/threshold_probs.py) | UNet+TR | Fixed threshold applied to UNet++ P(iceberg) instead of B08 |
 | [`scripts/otsu_probs.py`](scripts/otsu_probs.py) | UNet+OT | Per-chip Otsu applied to UNet++ P(iceberg) |
-| [`scripts/tophat_recover.py`](scripts/tophat_recover.py) | TH | White top-hat post-processor stacked on any base method (results just generated; placed last for emphasis) |
+| [`scripts/tophat_recover.py`](scripts/tophat_recover.py) | TH | White top-hat post-processor stacked on any base method |
 
-To leave inline edits, the GitHub web UI lets you click the pencil icon on any file page to propose a change in a new branch and pull request.
-
-## Project context
-
-- **Imagery.** Sentinel-2 Level-1C, 10 m resolution, three bands per chip stacked in this order: B04 (red, 665 nm) at index 0, B03 (green, 560 nm) at index 1, B08 (NIR, 842 nm) at index 2. Chips are 256 x 256 pixels (2.56 km on a side) with the source scene's CRS and affine preserved.
-- **Reflectance offset.** All scenes use ESA processing baseline N0500 or later, which adds a +1000 DN offset before distribution. Our chip extractor scales by 1e-4 without subtracting that offset, so every reflectance value in our chips is uniformly +0.10 higher than in the offset-corrected space used by Fisser and others (2024). Every threshold value quoted in this code is in the offset-uncorrected space, i.e. our 0.22 corresponds to Fisser's calibrated 0.12. Because the offset is identical across all our chips, it cancels out of any relative comparison between methods or SZA bins.
-- **Reference baseline.** The `B08 >= 0.12` threshold is from Fisser and others (2024); the 15 % ice-coverage (IC) chip-rejection rule is from Fisser and others (2025) eq. 2 (Fisser 2024 used a separate visual ~10 % per-acquisition sea-ice exclusion, not the algorithmic 10 km block rule we apply).
-- **Study aim.** Compare six methods for retrieving iceberg area at four SZA bins (lt65, 65 to 70, 70 to 75, gt75) in two Greenland fjords (Kangerlussuaq, Sermilik). Two purely classical methods (TR, OT), one learned (UNet++), and three hybrids that consume the UNet++ softmax (UNet_TR, UNet_OT, UNet_CRF). The white top-hat is in the pack as a sensitivity branch, not a headline method.
-- **Outputs.** Every method writes an aggregate `all_icebergs.gpkg`, a `method_config.json` with the parameter block for provenance, and a `skipped_chips.csv` listing every chip the method refused with a reason code. The prob-band methods (`UNet_TR`, `UNet_OT`, `UNet_CRF`) and `TH` additionally emit per-chip gpkgs under `gpkgs/<chip_stem>_icebergs.gpkg`; `OT` also writes per-chip diagnostic PNGs under `pngs/`. Output schema is the same across methods so the evaluator can join on `chip_stem`.
-
-## Methods at a glance
+## Methods glossary
 
 | Method | Input | Operation | Key parameters | Min polygon area |
 |---|---|---|---|---|
@@ -52,29 +42,15 @@ The IC chip-rejection rule is from Fisser and others (2025), eq. 2: the original
 | Q14 | Rasterised-polygon path is safe (0/463 mismatches) |
 | Q20 | 5 CRF iterations is enough (0.04% pixel flips per step at 5 → 10) |
 
-### `threshold_tifs.py` (TR)
-
-(All open questions for this method have been pre-checked; see `paper-writing/methods_draft.md` Section 2.14.)
-
-### `otsu_threshold_tifs.py` (OT)
-
-(All open questions for this method have been pre-checked; see `paper-writing/methods_draft.md` Section 2.14.)
-
 ### `densecrf_tifs.py` + `crf_utils.py` (UNet+CRF)
 
 - **CRF parameters.** `sxy_gaussian = 3`, `compat_gaussian = 3`, `sxy_bilateral = 40`, `srgb_bilateral = 3`, `compat_bilateral = 4`, `iterations = 5`. Drawn from a 2-point sandbox sweep on a holdout subset. The bilateral-spatial scale (40 px = 400 m) feels generous for our 256 x 256 chip; is this defensible for icebergs at this resolution, or should `sxy_bilateral` be closer to 5 to 15 px?
 - **Bilateral image.** The pairwise bilateral term consumes the chip after `scale_chip_to_uint8()`, which independently percentile-stretches each band (2/98) and casts to uint8. So the bilateral term is acting on a uint8 RGB-like rendering of B04/B03/B08, not on raw reflectance and not on grayscale. Is per-band 2/98 stretching appropriate here, or does it overweight bright outliers and pull boundaries onto noise?
 - **Two-class CRF.** Ocean vs iceberg only. Shadow has been merged into iceberg upstream during training so the model never emits a third channel. Is the two-class CRF the right setup given that bright sea ice and dark shadow can both touch real iceberg edges?
 
-(Iteration-count convergence has been pre-checked; see `paper-writing/methods_draft.md` Section 2.14 Q20.)
-
-### `tophat_recover.py` (TH) — newly generated, please prioritise
-
-Top-hat results were generated only days ago and will be in the paper's Phase B tables. The questions below are the ones the in-house checks could not settle.
+### `tophat_recover.py` (TH)
 
 - **Min component size.** `min_area_px = 16` (~40 m root length). Matches the 40 m root-length filter we apply globally on the annotation side. Reasonable, or should the cutoff be smaller for a recovery method whose entire job is to find missed small icebergs?
-
-(SE radius, top-hat threshold, and base-mask CRS path have been pre-checked; see `paper-writing/methods_draft.md` Section 2.14 Q12, Q13, Q14.)
 
 ## How the methods plug together
 
@@ -94,20 +70,6 @@ chip .tif  (B04/B03/B08, 10 m)
 ```
 
 `predict_tifs.py` is the UNet++ inference step and is not in this review pack. It writes a 2-band float32 GeoTIFF per chip with band 0 = `P(ocean)` and band 1 = `P(iceberg)`; that is the input to the three `*_probs.py` and to `densecrf_tifs.py`.
-
-## Dependencies
-
-- numpy, rasterio, geopandas, shapely, pandas
-- scikit-image (`threshold_otsu`, `disk`, `white_tophat`, `label`)
-- pydensecrf or pydensecrf2 (only needed for `densecrf_tifs.py`)
-- matplotlib (only for `otsu_threshold_tifs.py` diagnostic PNGs)
-
-## Provenance
-
-- Branch: `paper-figures-and-results`. Live scripts under [`iceberg-rework/scripts/`](scripts/).
-- The inline source pasted at the end of this README is a read-through copy of the live scripts at the time of the last commit to this README. If you are about to leave a comment on a specific line, prefer clicking through to the live file via the table above so the line numbers match.
-
----
 
 # Inline source code
 
@@ -1786,3 +1748,13 @@ if __name__ == "__main__":
 ```
 
 </details>
+
+
+
+## Project context
+
+- **Imagery.** Sentinel-2 Level-1C, 10 m resolution, three bands per chip stacked in this order: B04 (red, 665 nm) at index 0, B03 (green, 560 nm) at index 1, B08 (NIR, 842 nm) at index 2. Chips are 256 x 256 pixels (2.56 km on a side) with the source scene's CRS and affine preserved.
+- **Reflectance offset.** All scenes use ESA processing baseline N0500 or later, which adds a +1000 DN offset before distribution. Our chip extractor scales by 1e-4 without subtracting that offset, so every reflectance value in our chips is uniformly +0.10 higher than in the offset-corrected space used by Fisser and others (2024). Every threshold value quoted in this code is in the offset-uncorrected space, i.e. our 0.22 corresponds to Fisser's calibrated 0.12. Because the offset is identical across all our chips, it cancels out of any relative comparison between methods or SZA bins.
+- **Reference baseline.** The `B08 >= 0.12` threshold is from Fisser and others (2024); the 15 % ice-coverage (IC) chip-rejection rule is from Fisser and others (2025) eq. 2 (Fisser 2024 used a separate visual ~10 % per-acquisition sea-ice exclusion, not the algorithmic 10 km block rule we apply).
+- **Study aim.** Compare six methods for retrieving iceberg area at four SZA bins (lt65, 65 to 70, 70 to 75, gt75) in two Greenland fjords (Kangerlussuaq, Sermilik). Two purely classical methods (TR, OT), one learned (UNet++), and three hybrids that consume the UNet++ softmax (UNet_TR, UNet_OT, UNet_CRF). The white top-hat is in the pack as a sensitivity branch, not a headline method.
+- **Outputs.** Every method writes an aggregate `all_icebergs.gpkg`, a `method_config.json` with the parameter block for provenance, and a `skipped_chips.csv` listing every chip the method refused with a reason code. The prob-band methods (`UNet_TR`, `UNet_OT`, `UNet_CRF`) and `TH` additionally emit per-chip gpkgs under `gpkgs/<chip_stem>_icebergs.gpkg`; `OT` also writes per-chip diagnostic PNGs under `pngs/`. Output schema is the same across methods so the evaluator can join on `chip_stem`.
