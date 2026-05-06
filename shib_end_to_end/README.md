@@ -11,7 +11,7 @@
 
 This document is the authoritative record of all experimental work completed for the independent study. It covers Phase A (dataset progression, A0 winner selection, C1/C2 ablation), Phase B (6-method sweep on the A0 checkpoint), per-iceberg evaluation metrics, the Fisser (2024) comparison attempt, and (added 2026-05-05) the Phase A higher-SZA re-eval and the A0-vs-A1 Phase B backbone comparison. All numbers are confirmed from actual script output.
 
-For the higher-SZA re-eval (T1, T2) and the backbone comparison (T3, T4), see `phase_a_higher_sza_t1_t4.md`. Headline (updated 2026-05-05 evening with 8 A1-anchored Phase A variants): A7b (= A1 manifest + size oversample + augmentation; collapses with A8b and A9b) wins every higher-SZA bin and beats A1 at lt65 too, replacing A1 as the recommended non-A0 backbone. A0 still wins lt65 outright. Mean MAE across the three higher-SZA bins: A0 33.33 m, A1 28.01 m, A7b 27.24 m. Phase B with the A7b backbone is not yet run; the A1+UNet_CRF pipeline recommendation in T4 is therefore conservative.
+For the higher-SZA re-eval (T1, T2) and the backbone comparison (T3, T4, T5), see `phase_a_higher_sza_t1_t4.md`. Headline (revised 2026-05-06 after A7b Phase B + top-hat completed): **A7b** (= A8b == A9b by collapse; A1 manifest + size oversample + augmentation) is the higher-SZA champion across all 18 Phase A backbones; **A7b + UNet_CRF** is the cleanest learned cross-bin pipeline (higher-SZA mean IoU 0.616 vs A1 + UNet_CRF's 0.602 at tied MAE 15.59 m vs 15.21 m; A7b wins sza_gt75 outright). A0 + UNet_OT survives as the lt65 pick (8.45 m, reproducing the published 8.18 m within rounding). Top-hat lifts UNet_OT recall in higher SZA bins but degrades UNet_CRF cross-bin, so A7b + UNet_CRF base (no TH) is the recommendation.
 
 **The paper's core claim:** UNet++ + Otsu post-processing achieves root-length MAE of 8.18 m and +4.9% relative area error on the >100 m iceberg subset at SZA < 65°, compared to the B08 threshold method at 17.05 m MAE and -33% RE under the same automated pipeline conditions. Fisser (2024) reported ±5.7% RE for the threshold method under manually curated conditions.
 
@@ -244,6 +244,9 @@ The Fisser ±5.7% is cited as motivation (published TR baseline under ideal cond
 | A7b mean MAE (3 higher-SZA bins) | 27.24 m, IoU 0.531 | re_eval_v4_clean A7b, 20260505 |
 | A7a/A8a/A9a mean MAE (higher SZA) | 28.53 m, IoU 0.520 | A1 + size oversample, aug=off |
 | A5a/A6a mean MAE (higher SZA) | 28.48 m, IoU 0.514 | A1 + class balancing, aug=off |
+| A7b + UNet_CRF mean (higher SZA) | 15.59 m, IoU 0.616 | re_phase_b A7b, 20260506 (cross-bin pick) |
+| A1 + UNet_CRF mean (higher SZA) | 15.21 m, IoU 0.602 | re_phase_b A1, 20260505 (prior pick) |
+| A0 + UNet_CRF mean (higher SZA) | 20.62 m, IoU 0.586 | re_phase_b A0, 20260505 |
 
 ---
 
