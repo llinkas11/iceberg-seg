@@ -78,8 +78,10 @@ roboflow/locator_maps/
 paper-writing/_archive/
 # paper-writing/overleaf/  <- INCLUDED for reproducibility
 # paper-writing/*.pdf      <- INCLUDED (journal style guide)
-paper-writing/overleaf/git-mirror/   # live Overleaf clone (its own git repo)
-paper-writing/figure_review/   # intermediate review materials, not final
+# Live Overleaf clone (its own git repo)
+paper-writing/overleaf/git-mirror/
+# Intermediate review materials, not final
+paper-writing/figure_review/
 
 # Retired figure versions (keep only the latest in fig-archive/)
 paper-writing/figures/fig-archive/_archive/
