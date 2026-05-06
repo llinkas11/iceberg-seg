@@ -1,0 +1,30 @@
+# A5a: A1 + 2:1 positive-biased balancing, aug=off.
+#
+# Re-anchors the original A5 (which forked from A4 / v4_clean_lt65_plus_nulls)
+# onto the A1 manifest (v4_raw_lt65_plus_nulls, Fisser preprocessing). The
+# single controlled difference from A1 is the balancing scheme. Tests
+# whether class balancing helps generalisation when stacked on the backbone
+# that won every higher-SZA bin in the 2026-05-05 re-eval (T1, T2).
+
+id: exp_A5a_a1_2pos
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      v4_raw_lt65_plus_nulls
+    balancing_scheme: scheme_D_two_pos_per_null
+  augmentation:
+    enabled: false       # mirrors A1; isolates balancing as the single change
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A5a
+  compared_to: exp_A1_fisser_lt65_plus_nulls
+
+notes: |
+  Sibling to A6a (adaptive direction) and A7a (size oversample only). The
+  A5a / A6a / A7a triple isolates the balancing-direction effect under A1's
+  raw preprocessing; the A1 to A5a delta is the single-axis test of
+  fixed-positive class balancing on the higher-SZA-generalising backbone.

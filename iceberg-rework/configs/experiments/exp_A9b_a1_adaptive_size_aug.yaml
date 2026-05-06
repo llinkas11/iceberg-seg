@@ -1,0 +1,30 @@
+# A9b: A6a + size oversample (scheme_L), aug=on.
+#
+# Fair test of adaptive class balancing composed with size oversample on A1.
+# Closes the aug=on A1 grid: class in {none (=A1), fixed positive (would be
+# A5b, deferred), adaptive (A9b implicitly extends A6b which is deferred)}.
+
+id: exp_A9b_a1_adaptive_size_aug
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      v4_raw_lt65_plus_nulls
+    balancing_scheme: scheme_L_adaptive_size_balanced
+  augmentation:
+    enabled: true
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A9b
+  compared_to: exp_A1_fisser_lt65_plus_nulls
+
+notes: |
+  Composition: I + J on A1, aug=on. If A8b == A9b on the v4_raw_lt65_plus_nulls
+  manifest, the GT+ majority forces both into fixed-positive direction (same
+  collapse pattern as the original A8 / A9). Aug-on A5b / A6b not included
+  in this round; pure class balancing without size oversample is testable
+  via the aug=off variants A5a / A6a where aug had a small effect in the
+  original Phase A grid.

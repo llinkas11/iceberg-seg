@@ -138,16 +138,17 @@ scan without reading prose.
 
 ---
 
-## Higher-SZA generalisation and backbone re-eval (added 2026-05-05)
+## Higher-SZA generalisation and backbone re-eval (added 2026-05-05; expanded 2026-05-05 evening)
 
-Both Phase A and the original Phase B were `sza_lt65`-scoped (manifests v4_raw_lt65* and v4_clean_lt65* contain only lt65 chips). Three follow-up runs on moosehead (Slurm 60293, 60296, 60297) re-evaluate every Phase A checkpoint and re-run Phase B with two different backbones across all four SZA bins on the unifying v4_clean test split. Full tables (T1 per-bin x A0..A9, T2 best non-A0 per bin, T3 A0 vs A1 Phase B, T4 recommended pipeline) live in `shib_end_to_end/phase_a_higher_sza_t1_t4.md`.
+Both Phase A and the original Phase B were `sza_lt65`-scoped (manifests v4_raw_lt65* and v4_clean_lt65* contain only lt65 chips). Three follow-up runs on moosehead (Slurm 60293, 60296, 60297) re-evaluate every Phase A checkpoint and re-run Phase B with two different backbones across all four SZA bins on the unifying v4_clean test split. The 2026-05-05 evening expansion (Slurm 60309-60316 + 60318) adds 8 A1-anchored variants (A5a..A9a aug=off, A7b..A9b aug=on, all on `v4_raw_lt65_plus_nulls`) so Phase A's class- and size-balancing axes are tested on top of A1's manifest rather than only on v4_clean_lt65_plus_nulls. Full tables (T1 per-bin x 18 experiments, T2 best non-A0 per bin, T3 A0 vs A1 Phase B, T4 recommended pipeline) live in `shib_end_to_end/phase_a_higher_sza_t1_t4.md`.
 
-Headline findings:
+Headline findings (2026-05-05 evening, after the A1-anchored variants):
 
-- **A1 wins every higher-SZA bin** on both per-pair IoU and per-pair root-length MAE (T1, T2). A0 still wins lt65. The 29 GT-zero chips that distinguish A1 from A0 act as a regulariser on bins the model never saw at training: A1's mean MAE across the three higher-SZA bins is 28.01 m vs A0's 33.33 m, a 16% reduction.
+- **A7b (= A1 + size oversample + augmentation; A7b == A8b == A9b by collapse) is the new higher-SZA champion** across all 18 Phase A backbones. A7b mean MAE 27.24 m and mean IoU 0.531 over the three higher-SZA bins, beating A1's 28.01 m / 0.499 and A0's 33.33 m / 0.490. A7b also beats A1 at lt65 (15.90 m vs 17.74 m); A0 still wins lt65 outright at 10.99 m.
+- **The 5 aug=off A1-anchored variants** (A5a == A6a, A7a == A8a == A9a) all beat A1 at higher SZA but trail A7b. The size-oversample axis (A7a vs A1) carries most of the lift; augmentation adds a final refinement at higher SZA (A7b vs A7a).
 - **The published lt65 headline (A0 + UNet_OT, 8.18 m MAE) reproduces** within rounding on the v4_clean lt65 split (8.45 m here); T3's A0 + UNet_OT lt65 cell is the canonical comparison.
-- **A1 + UNet_CRF is the strongest single-backbone-single-method pipeline across all four bins** when the goal is one method that works everywhere; it wins 3 of 4 bins on MAE among learned methods (lt65 loses to A0 + UNet_OT but is competitive at 14.02 m MAE) and keeps n high (350-494 in higher bins) where TR's coverage drops to n=126 at sza_70_75.
-- A0 + UNet_OT (lt65) and A1 + UNet_CRF (higher SZA) is the per-bin-best combination if the paper allows different methods per bin. T4 in the new artifact lays out both options.
+- **Phase B has not yet been re-run with A7b.** The current T4 recommendation (A1 + UNet_CRF) is therefore conservative; once A7b's Phase B sweep lands, the recommended single-pipeline pick will likely shift to A7b + UNet_CRF or A7b + UNet_OT.
+- The original "A1 wins every higher-SZA bin" framing was correct for the 10-experiment grid but is superseded by A7b in the 18-experiment grid.
 
 These results do not change Phase A's lt65 winner (still A0); they extend the model-selection story to higher SZA bins that Phase A could not previously address.
 
