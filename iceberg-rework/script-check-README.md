@@ -46,58 +46,33 @@ The IC chip-rejection rule is from Fisser and others (2025), eq. 2: the original
 
 ## What I would like you to check
 
-The questions below are deliberately specific. If anything looks fine, a one-liner is enough; the value of this review is in catching the things I have not flagged.
+We have done in-house verification on a number of parameters (Fisser-paper citation audit, IC cutoff sweep, polygonisation-artifact audit, 8- vs 4-connectivity polygonisation, Otsu floor distribution, raw vs log-B08 Otsu, IC test against fixed reference vs per-chip Otsu, IC / Otsu order of operations, NDWI threshold sweep, UNet probability-threshold F1 sweep, flat-prob and prob-floor distributions). The pre-baked answers are stamped into the live scripts and summarised in `paper-writing/methods_draft.md` Section 2.14, with full per-chip CSVs and figures under `paper-writing/figure_review/script_check_answers/`. The questions below are what those checks could not settle, and where I would most value your eyes. A one-liner is enough where things look fine; the value of this review is catching the things I have not flagged.
 
 ### `threshold_tifs.py` (TR)
 
-- **Threshold value.** We use 0.22 in offset-uncorrected reflectance space, equivalent to Fisser's 0.12 after the +0.10 baseline-N0500 correction. Is the offset reasoning correct, and is it acceptable to leave the chip extractor with the offset in place rather than subtract it before thresholding?
-- **IC block filter.** A chip is skipped if more than 15 % of pixels exceed 0.22. The 15 % cutoff is taken from Fisser (2025). Is this the right operating point for our SZA range?
-  - *Pre-checked* ([q01_ic_cutoff_sweep/](../paper-writing/figure_review/script_check_answers/q01_ic_cutoff_sweep/), [script](scripts/script_check_answers/q01_ic_cutoff_sweep.py)): empirical sweep over 23981 chips. At the production 0.15 cutoff, 41% of chips are skipped overall; per-(region, SZA bin) skip-rate ranges from 27% (KQ sza_70_75) to 79% (SK sza_70_75). The ECDF is bimodal: a steep climb to ~0.55 at ic_frac near 0 (open-water chips) and a slow rise past 0.6 (sea-ice / land-edge chips). The 0.15 cutoff sits inside the slow middle, so moving it to 0.20 or 0.30 only buys a few percent fewer skips and the SK-vs-KQ asymmetry persists at every cutoff.
-- **Connected-component polygonisation.** `rasterio.features.shapes` on the binary mask, no morphological cleanup before vectorisation. Any concerns about salt-and-pepper artifacts inflating the polygon count? The 100 m² min-area cutoff (~10 x 10 m) does most of the cleanup downstream.
-  - *Pre-checked* ([q02_polygonisation_artifacts/](../paper-writing/figure_review/script_check_answers/q02_polygonisation_artifacts/), [script](scripts/script_check_answers/q02_polygonisation_artifacts.py)): polygonised the production B08 >= 0.22 mask on 14109 IC-passing chips. 30.5% of pre-cutoff polygons are <= 1 pixel and 46.7% are <= 2 pixels. The 100 m² cutoff equals one pixel and so keeps every polygon: it is not a salt-and-pepper filter. A single `binary_opening(disk(1))` before vectorisation drops 71.9% of the kept polygons (476187 to 133568) and 13.6% of total area (1078.95 to 931.76 km²); the polygon count is dominated by 1-pixel and 2-pixel components.
-- **No separation of touching icebergs.** Two icebergs whose pixels are 8-connected through one bright pixel become one polygon. Is that acceptable here, or should we use 4-connectivity, watershed, or distance-transform splitting?
+(All open questions for this method have been pre-checked; see `paper-writing/methods_draft.md` Section 2.14.)
 
 ### `threshold_masked_tifs.py` (TR with NDWI water mask)
 
-- **NDWI threshold = 0** (McFeeters 1996 default). NDWI = (B03 - B08) / (B03 + B08 + ε); pixels with NDWI > 0 are classified as open water. Fisser and others (2024) do not use NDWI; this branch is a chip-level land-edge safeguard added by this project. We keep NDWI > 0.
-  - **Sweep** ([sweeps/ndwi_threshold_sweep.csv](sweeps/ndwi_threshold_sweep.csv); summary at [ndwi_threshold_sweep_summary.csv](../paper-writing/figure_review/results_figs_table_previews/ndwi_threshold_sweep_summary.csv)): tightening from 0 to 0.05 across 8410 KQ chips cuts total iceberg km² by 9.4 % at SZA < 65° and 25.8 % at SZA > 75° (overall: 20.7 %).
-  - **Cloud filter** ([compute_chip_cloud_fractions.py](scripts/compute_chip_cloud_fractions.py); QA60 MSK_CLASSI_B00, 10 % cutoff): flags 539 of 8410 chips (6.4 %), all of which are already IC-excluded, so the area aggregates do not change when this filter is layered on. Results are robust to QA60-based cloud removal.
-  - **Spot-check** ([ndwi_chip_diffs_median](../paper-writing/figure_review/results_figs_table_previews/ndwi_chip_diffs_median/)): on 8 chips with 5–30 % per-chip area loss spanning all four SZA bins, the lost pixels lie inside iceberg-water mixed features and brash-ice melange in open fjord water, consistent with NDWI compression at high SZA from elevated open-ocean NIR (noted in Fisser and others, 2024).
-  - **Caveat.** Top-loss chips ([ndwi_chip_diffs](../paper-writing/figure_review/results_figs_table_previews/ndwi_chip_diffs/)) include thin-cirrus contamination that QA60 does not flag at any sensible threshold; that tail accounts for at most ~7 % of the total area loss when bounded by the top-10 high-loss chips. The right tool for that residual is a stronger cloud detector (s2cloudless, Fmask), not a higher NDWI cutoff, since 0.05 over-tightens on the typical chip.
-- **AND with B08 >= 0.22.** A pixel is an iceberg only if both criteria pass. This kills sea ice (B08 high, NDWI low) and clouds (NDWI low) but also kills very bright icebergs whose NDWI may dip below 0 if B08 saturates. Is the AND defensible, or should it be a soft union with a higher B08 threshold for non-water pixels?
-- **Sensitivity branch only.** This file is not in the headline six-method comparison. Is there a reason to promote it, e.g. if the IC filter is too crude for high-SZA chips?
+- **AND with B08 >= 0.22.** A pixel is an iceberg only if both criteria pass. This kills sea ice (B08 high, NDWI low) and clouds (NDWI low), but also kills very bright icebergs whose NDWI may dip below 0 if B08 saturates. Is the AND defensible, or should it be a soft union with a higher B08 threshold for non-water pixels?
 
 ### `otsu_threshold_tifs.py` (OT)
 
-- **Otsu on raw B08.** No log-transform, no contrast stretch, no exclusion of saturated pixels. Otsu finds the threshold maximising inter-class variance on the chip's 256 x 256 pixel histogram. For ocean-dominated chips the histogram is highly skewed; does Otsu still give a sensible threshold, or should we be doing a log-transform first?
-- **Flat-chip floor.** `min_otsu_thresh = 0.10`. Chips where Otsu returns a threshold below 0.10 are skipped. The floor exists because a featureless ocean chip will let Otsu find a "threshold" near zero on noise. Is 0.10 the right floor in offset-uncorrected reflectance, or should it be 0.20 (i.e. 0.10 after the +0.10 offset)?
-  - *Pre-checked* ([q07_otsu_floor_distribution/](../paper-writing/figure_review/script_check_answers/q07_otsu_floor_distribution/), [script](scripts/script_check_answers/q07_otsu_floor_distribution.py)): per-chip Otsu over 23981 chips. At the production 0.10 floor 6.1% of chips skip; raising to 0.15 jumps to 41.0% and the offset-corrected equivalent 0.20 hits 50.5%. The histogram has a sharp spike just past 0.10 (Otsu locking onto the open-water noise floor) and a long tail past 0.5 driven by sea-ice / land-edge chips. Moving the floor to 0.20 would discard about half the population, including many chips whose Otsu correctly separates icebergs from a moderately bright background.
-- **IC filter on the Otsu result.** Same 15 % rule as TR but evaluated against the Otsu threshold for that chip. Order of operations: compute Otsu, then test whether 15 % of pixels exceed it. Is this the right order, or should the IC test be against a fixed reference threshold so that "sea ice contamination" means the same thing across chips?
-- **Visualisation.** Three-panel diagnostic PNG (false-color RGB, B08 histogram with threshold marked, mask overlay). Used for QA only, not in the area pipeline. Any obvious thing missing from the QA panel?
+(All open questions for this method have been pre-checked; see `paper-writing/methods_draft.md` Section 2.14.)
 
 ### `tophat_recover.py` (TH)
 
-- **Structuring element.** `disk(10)` at 10 m pixels, i.e. SE radius 100 m. Drawn from Fisser's reported small-iceberg cap. Is the disk shape and that radius defensible for the 40 m to 100 m size range we want to recover, or should we sweep over multiple radii and combine?
+- **Structuring element.** `disk(10)` at 10 m pixels, i.e. SE radius 100 m. Drawn from Fisser 2024's reference-iceberg lower bound: they only visually delineated icebergs with root length above 100 m because at 10 m resolution the spectrally mixed edge dominates the area of smaller icebergs (Fisser 2024 p. 5). Our white top-hat targets the gap between Fisser 2025's 40 m dataset minimum and Fisser 2024's 100 m visual-delineation floor. Is the disk shape and that radius defensible for the 40 m to 100 m size range, or should we sweep over multiple radii and combine?
 - **Top-hat threshold.** `th_thresh = 0.05` reflectance units. Honestly chosen by eye on a few chips. If there is a more principled estimator (e.g., chip-wise σ of the top-hat response, or an Otsu of the response), I would adopt it.
 - **Min component size.** `min_area_px = 16` (~40 m root length). Matches the 40 m root-length filter we apply globally on the annotation side. Reasonable, or should the cutoff be smaller for a recovery method whose entire job is to find missed small icebergs?
 - **Subtraction of base mask.** Recovered candidates are `(response >= th_thresh) AND NOT base_mask`. Base mask is built from `<stem>_pred.tif` if present, else by rasterising the base method's polygons. Any concerns about the rasterised-polygon path on per-chip CRS mismatches?
-- **Cross-chip aggregation.** The combined `all_icebergs.gpkg` is written `try/except` because some Fisser synthetic chips have CRS = None and our real chips span UTM 24N + 25N. Per-chip gpkgs always succeed; the cross-chip concat is best-effort. Is this the right call?
 
 ### `densecrf_tifs.py` + `crf_utils.py` (UNet+CRF)
 
 - **CRF parameters.** `sxy_gaussian = 3`, `compat_gaussian = 3`, `sxy_bilateral = 40`, `srgb_bilateral = 3`, `compat_bilateral = 4`, `iterations = 5`. Drawn from a 2-point sandbox sweep on a holdout subset. The bilateral-spatial scale (40 px = 400 m) feels generous for our 256 x 256 chip; is this defensible for icebergs at this resolution, or should `sxy_bilateral` be closer to 5 to 15 px?
 - **Bilateral image.** The pairwise bilateral term consumes the chip after `scale_chip_to_uint8()`, which independently percentile-stretches each band (2/98) and casts to uint8. So the bilateral term is acting on a uint8 RGB-like rendering of B04/B03/B08, not on raw reflectance and not on grayscale. Is per-band 2/98 stretching appropriate here, or does it overweight bright outliers and pull boundaries onto noise?
-- **Two-class CRF.** Ocean vs iceberg only. Shadow has been merged into iceberg upstream during training so the model never emits a third channel. Is the two-class CRF the right setup for this problem given that bright sea ice and dark shadow can both touch real iceberg edges?
+- **Two-class CRF.** Ocean vs iceberg only. Shadow has been merged into iceberg upstream during training so the model never emits a third channel. Is the two-class CRF the right setup given that bright sea ice and dark shadow can both touch real iceberg edges?
 - **Argmax over five iterations.** Standard mean-field schedule. We have not measured whether more iterations meaningfully change the result. Is five enough?
-
-### `threshold_probs.py` and `otsu_probs.py` (UNet+TR, UNet+OT)
-
-- **Threshold = 0.22 on probability.** UNet+TR uses 0.22 as the cutoff on `P(iceberg)`. The number was inherited from the Fisser reflectance threshold deliberately, so `UNet_TR` and `TR` use a numerically identical cutoff in different spaces. Is reusing 0.22 the right choice, or should we calibrate the probability threshold separately, e.g. to the F1 optimum on the validation set?
-  - *Pre-checked* ([q15_unet_threshold_f1/](../paper-writing/figure_review/script_check_answers/q15_unet_threshold_f1/), [script](scripts/script_check_answers/q15_unet_threshold_f1.py)): pixel-level F1 / IoU / precision / recall vs τ on the v4_clean **test** split (171/228 chips matched between manifest and the stage1_vs_baseline probs run). F1 climbs slowly from 0.40 at τ=0.05 to argmax 0.528 at τ=0.90; production τ=0.22 gives F1=0.464 (Δ to argmax = +0.064). Read this as a test-set sensitivity check, not a calibration recommendation: val-split predictions have not been emitted yet, and tuning τ on test would be informal calibration on the held-out set. Re-run with `--split val` once val probs exist to make this a defensible calibration.
-- **Flat-prob skip.** `otsu_probs.py` skips chips where `P(iceberg).max() - .min() < 0.01`. Otsu cannot find a threshold on a flat distribution; this guard exists to avoid a degenerate split. Is 0.01 a reasonable flatness floor on softmax space?
-  - *Pre-checked* ([q16_flat_prob_distribution/](../paper-writing/figure_review/script_check_answers/q16_flat_prob_distribution/), [script](scripts/script_check_answers/q16_flat_prob_distribution.py)): per-chip `range_p` over the 171 test chips with probs. The would-skip rate is 0% at every candidate cutoff in {0.005, 0.01, 0.02, 0.05}: every chip's range exceeds the production 0.01 floor by a wide margin. The 0.01 floor is not constraining on this population, so the guard is effectively a safety net for degenerate inputs rather than a tuning knob.
-- **No `min_otsu_thresh` floor on probabilities.** OT on B08 has a floor at 0.10 reflectance; OT on probability does not. Should OT on probability also have a floor (e.g. 0.5) to avoid carving icebergs out of low-confidence ocean?
-  - *Pre-checked* ([q17_otsu_on_prob_floor/](../paper-writing/figure_review/script_check_answers/q17_otsu_on_prob_floor/), [script](scripts/script_check_answers/q17_otsu_on_prob_floor.py)): per-chip Otsu over the 171 test chips with probs. 52% of chips have Otsu < 0.3 and 100% have Otsu < 0.5: a 0.5 floor would activate on every chip and remove 22.5% of total iceberg pixels; a 0.3 floor would activate on 52% of chips and remove 19.0%. Per-chip Otsu sits well below 0.5 across the population, so the proposed 0.5 floor is too aggressive; if a floor is wanted, 0.3 buys most of the protection without erasing the half of chips whose Otsu is correctly low.
 
 ## How the methods plug together
 
@@ -270,7 +245,7 @@ def write_skipped_chips(out_dir, skipped):
 </details>
 
 <details>
-<summary><strong>threshold_tifs.py</strong> — TR, fixed B08 threshold (184 lines)</summary>
+<summary><strong>threshold_tifs.py</strong> — TR, fixed B08 threshold (185 lines)</summary>
 
 ```python
 """
@@ -318,8 +293,9 @@ THRESHOLD   = 0.22   # Fisser 2024 B08 NIR reflectance threshold (0.12) + 0.10 D
                      # chip_sentinel2.py does not subtract this offset, so reflectances are +0.1 high
                      # 0.22 here = 0.12 in Fisser's corrected reflectance space
 MIN_AREA_M2 = 100    # minimum polygon area in m2 (~10x10 m)
-IC_THRESHOLD = 0.15  # Fisser 2025 IC block filter: skip chip if >15% of pixels exceed NIR threshold
+IC_THRESHOLD = 0.15  # Fisser 2025 IC block filter (eq. 2): skip chip if >15% of pixels exceed NIR threshold
                      # Flags chips dominated by sea ice rather than open water with icebergs
+                     # Original Fisser 2025 rule: 10 km block; we apply at 2.56 km chip level (pre-tiled chips)
 
 
 def apply_threshold(chips_dir, out_dir, b08_idx=2, threshold=THRESHOLD, min_area_m2=MIN_AREA_M2, ic_threshold=IC_THRESHOLD):
@@ -462,16 +438,16 @@ if __name__ == "__main__":
 </details>
 
 <details>
-<summary><strong>threshold_masked_tifs.py</strong> — TR with NDWI water mask (197 lines)</summary>
+<summary><strong>threshold_masked_tifs.py</strong> — TR with NDWI water mask (307 lines)</summary>
 
 ```python
 """
-threshold_masked_tifs.py: Apply Fisser B08 >= 0.12 NIR threshold restricted to
+threshold_masked_tifs.py — Apply Fisser B08 ≥ 0.12 NIR threshold restricted to
 open-water pixels identified by an NDWI water mask.
 
-NDWI = (B03 - B08) / (B03 + B08 + e)
+NDWI = (B03 - B08) / (B03 + B08 + ε)
 Pixels where NDWI > ndwi_threshold are classified as open water.
-B08 >= 0.12 is then applied ONLY within open-water pixels.
+B08 ≥ 0.12 is then applied ONLY within open-water pixels.
 
 This prevents bright sea ice, clouds, and snow from being counted as icebergs,
 giving a fairer comparison to UNet++ which learned to distinguish these classes.
@@ -502,11 +478,141 @@ import pandas as pd
 warnings.filterwarnings("ignore")
 
 NIR_THRESHOLD  = 0.22   # Fisser 2024 B08 threshold (0.12) + 0.10 DN offset correction
-                        # All scenes baseline >=4.0: chip_sentinel2.py does not subtract +1000 DN offset
-NDWI_THRESHOLD = 0.0    # NDWI > 0 -> open water (negative = ice/land/cloud)
-MIN_AREA_M2    = 100    # ~10x10 m minimum polygon
-IC_THRESHOLD   = 0.15   # Fisser 2025 IC block filter: skip chip if >15% of pixels exceed NIR threshold
+                        # All scenes baseline ≥4.0: chip_sentinel2.py does not subtract +1000 DN offset
+NDWI_THRESHOLD = 0.0    # McFeeters 1996 default. Fisser 2024 does not use NDWI;
+                        # this is a chip-level land-edge safeguard. KQ sweep
+                        # (sweep_ndwi_threshold.py) shows raising to 0.05 cuts
+                        # 21% of total iceberg area (26% at SZA > 75°) by killing
+                        # iceberg-water mixed pixels, not land edges, so 0 stays.
+MIN_AREA_M2    = 100    # ~10×10 m minimum polygon
+IC_THRESHOLD   = 0.15   # Fisser 2025 IC block filter (eq. 2): skip chip if >15% of pixels exceed NIR threshold
                         # Flags chips dominated by sea ice rather than open water with icebergs
+                        # Original Fisser 2025 rule: 10 km block; we apply at 2.56 km chip level (pre-tiled chips)
+
+
+def _apply_thresholds(
+    b03,
+    b08,
+    transform,
+    source_name,
+    nir_threshold=NIR_THRESHOLD,
+    ndwi_threshold=NDWI_THRESHOLD,
+    min_area_m2=MIN_AREA_M2,
+    ic_threshold=IC_THRESHOLD,
+):
+    """Apply IC + NDWI + B08 thresholds to band arrays.
+
+    Inputs:
+        b03, b08    : 2-D float reflectance arrays.
+        transform   : rasterio affine for polygonization.
+        source_name : basename string stored on each polygon record.
+    Returns dict: ic_skipped, records, n_polygons, total_area_m2,
+                  water_px, iceberg_px, ic_frac.
+    """
+    out = {
+        "ic_skipped"   : False,
+        "records"      : [],
+        "n_polygons"   : 0,
+        "total_area_m2": 0.0,
+        "water_px"     : 0,
+        "iceberg_px"   : 0,
+        "ic_frac"      : float("nan"),
+    }
+
+    # 1. IC block filter (Fisser 2025): skip sea-ice-dominated chips
+    ic_frac = float((b08 >= nir_threshold).mean())
+    out["ic_frac"] = ic_frac
+    if ic_frac > ic_threshold:
+        out["ic_skipped"] = True
+        return out
+
+    # 2. NDWI water mask: open water has positive NDWI
+    ndwi       = (b03 - b08) / (b03 + b08 + 1e-6)
+    water_mask = (ndwi > ndwi_threshold).astype(np.uint8)
+    out["water_px"] = int(water_mask.sum())
+
+    # 3. Iceberg mask: bright NIR within open-water pixels
+    iceberg_mask = ((b08 >= nir_threshold) & (water_mask == 1)).astype(np.uint8)
+    out["iceberg_px"] = int(iceberg_mask.sum())
+
+    # 4. Polygonize and filter by min-area
+    records = []
+    for geom_dict, val in rio_shapes(iceberg_mask, transform=transform):
+        if val == 0:
+            continue
+        geom = shape(geom_dict)
+        if geom.is_empty or geom.area < min_area_m2:
+            continue
+        records.append({
+            "geometry"   : geom,
+            "class_id"   : 1,
+            "class_name" : "iceberg",
+            "area_m2"    : round(geom.area, 2),
+            "source_file": source_name,
+        })
+
+    out["records"]       = records
+    out["n_polygons"]    = len(records)
+    out["total_area_m2"] = float(sum(r["area_m2"] for r in records))
+    return out
+
+
+def detect_icebergs_in_chip(
+    tif_path,
+    b03_idx=1,
+    b08_idx=2,
+    nir_threshold=NIR_THRESHOLD,
+    ndwi_threshold=NDWI_THRESHOLD,
+    min_area_m2=MIN_AREA_M2,
+    ic_threshold=IC_THRESHOLD,
+):
+    """Run NDWI-masked Fisser threshold on one chip read from disk.
+
+    Inputs:
+        tif_path         : path to a Sentinel-2 chip GeoTIFF.
+        b03_idx, b08_idx : 0-indexed band positions.
+    Returns dict: band_skipped, n_bands, crs, plus all keys from
+                  _apply_thresholds (ic_skipped, records, n_polygons,
+                  total_area_m2, water_px, iceberg_px, ic_frac).
+    """
+    out = {
+        "band_skipped" : False,
+        "n_bands"      : 0,
+        "crs"          : None,
+        "ic_skipped"   : False,
+        "records"      : [],
+        "n_polygons"   : 0,
+        "total_area_m2": 0.0,
+        "water_px"     : 0,
+        "iceberg_px"   : 0,
+        "ic_frac"      : float("nan"),
+    }
+
+    # 1. Read chip
+    with rio.open(tif_path) as src:
+        chip = src.read().astype(np.float32)
+        meta = src.meta.copy()
+    out["crs"]     = meta["crs"]
+    out["n_bands"] = chip.shape[0]
+
+    # 2. Validate band count
+    if out["n_bands"] <= max(b03_idx, b08_idx):
+        out["band_skipped"] = True
+        return out
+
+    # 3. Apply thresholds on band arrays
+    inner = _apply_thresholds(
+        chip[b03_idx],
+        chip[b08_idx],
+        meta["transform"],
+        os.path.basename(tif_path),
+        nir_threshold  = nir_threshold,
+        ndwi_threshold = ndwi_threshold,
+        min_area_m2    = min_area_m2,
+        ic_threshold   = ic_threshold,
+    )
+    out.update(inner)
+    return out
 
 
 def apply_masked_threshold(
@@ -530,7 +636,7 @@ def apply_masked_threshold(
     print(f"  NIR threshold : B08 >= {nir_threshold}")
     print(f"  NDWI mask     : NDWI > {ndwi_threshold} (open water only)")
     print(f"  IC filter     : skip chip if bright-pixel fraction > {ic_threshold}")
-    print(f"  Min area      : {min_area_m2} m^2\n")
+    print(f"  Min area      : {min_area_m2} m²\n")
 
     all_gdfs  = []
     n_skipped = 0
@@ -539,59 +645,39 @@ def apply_masked_threshold(
     for i, tif_path in enumerate(tif_files):
         stem = os.path.splitext(os.path.basename(tif_path))[0]
 
-        with rio.open(tif_path) as src:
-            chip = src.read().astype(np.float32)   # (C, H, W)
-            meta = src.meta.copy()
+        # 1. Detect icebergs on this chip
+        res = detect_icebergs_in_chip(
+            tif_path,
+            b03_idx        = b03_idx,
+            b08_idx        = b08_idx,
+            nir_threshold  = nir_threshold,
+            ndwi_threshold = ndwi_threshold,
+            min_area_m2    = min_area_m2,
+            ic_threshold   = ic_threshold,
+        )
 
-        n_bands = chip.shape[0]
-        if n_bands <= max(b03_idx, b08_idx):
-            print(f"  [{i+1}/{len(tif_files)}] SKIP {stem} - only {n_bands} band(s)")
+        # 2. Log skipped chips
+        if res["band_skipped"]:
+            print(f"  [{i+1}/{len(tif_files)}] SKIP {stem}: only {res['n_bands']} band(s)")
             n_skipped += 1
             continue
 
-        b03 = chip[b03_idx]
-        b08 = chip[b08_idx]
-
-        # IC block filter (Fisser 2025): skip sea-ice-dominated chips
-        ic_frac = float((b08 >= nir_threshold).mean())
-        if ic_frac > ic_threshold:
+        if res["ic_skipped"]:
             print(
-                f"  [{i+1:>4}/{len(tif_files)}] IC   {stem[:55]}  ic_frac={ic_frac:.2f}"
+                f"  [{i+1:>4}/{len(tif_files)}] IC   {stem[:55]}  ic_frac={res['ic_frac']:.2f}"
             )
             n_ic += 1
             continue
 
-        # NDWI water mask: open water has positive NDWI
-        ndwi       = (b03 - b08) / (b03 + b08 + 1e-6)
-        water_mask = (ndwi > ndwi_threshold).astype(np.uint8)
-
-        # Apply NIR threshold restricted to open-water pixels
-        iceberg_mask = ((b08 >= nir_threshold) & (water_mask == 1)).astype(np.uint8)
-
-        records = []
-        for geom_dict, val in rio_shapes(iceberg_mask, transform=meta["transform"]):
-            if val == 0:
-                continue
-            geom = shape(geom_dict)
-            if geom.is_empty or geom.area < min_area_m2:
-                continue
-            records.append({
-                "geometry"   : geom,
-                "class_id"   : 1,
-                "class_name" : "iceberg",
-                "area_m2"    : round(geom.area, 2),
-                "source_file": os.path.basename(tif_path),
-            })
-
-        n_water_px   = int(water_mask.sum())
-        n_iceberg_px = int(iceberg_mask.sum())
+        # 3. Log per-chip detection counts
         print(
             f"  [{i+1:>4}/{len(tif_files)}] {stem[:55]}  "
-            f"water_px={n_water_px:>6}  icebergs={len(records)}"
+            f"water_px={res['water_px']:>6}  icebergs={res['n_polygons']}"
         )
 
-        if records:
-            gdf = gpd.GeoDataFrame(records, crs=meta["crs"])
+        # 4. Accumulate polygon records into a GeoDataFrame
+        if res["records"]:
+            gdf = gpd.GeoDataFrame(res["records"], crs=res["crs"])
             all_gdfs.append(gdf)
 
     if not all_gdfs:
@@ -608,19 +694,19 @@ def apply_masked_threshold(
     merged["iceberg_id"] = range(1, len(merged) + 1)
 
     icebergs = merged[merged["class_name"] == "iceberg"]
-    print(f"\n{'-'*50}")
+    print(f"\n{'─'*50}")
     print(f"Total iceberg polygons : {len(icebergs)}")
     if len(icebergs) > 0:
-        print(f"  min    = {icebergs['area_m2'].min():.1f} m^2")
-        print(f"  median = {icebergs['area_m2'].median():.1f} m^2")
-        print(f"  mean   = {icebergs['area_m2'].mean():.1f} m^2")
-        print(f"  max    = {icebergs['area_m2'].max():.1f} m^2")
-        print(f"  total  = {icebergs['area_m2'].sum()/1e6:.4f} km^2")
+        print(f"  min    = {icebergs['area_m2'].min():.1f} m²")
+        print(f"  median = {icebergs['area_m2'].median():.1f} m²")
+        print(f"  mean   = {icebergs['area_m2'].mean():.1f} m²")
+        print(f"  max    = {icebergs['area_m2'].max():.1f} m²")
+        print(f"  total  = {icebergs['area_m2'].sum()/1e6:.4f} km²")
     if n_ic:
         print(f"IC-filtered: {n_ic} chips (sea ice contamination)")
     if n_skipped:
         print(f"Skipped:     {n_skipped} chips (too few bands)")
-    print(f"{'-'*50}")
+    print(f"{'─'*50}")
 
     out_path = os.path.join(out_dir, "all_icebergs_threshold_masked.gpkg")
     merged.to_file(out_path, driver="GPKG")
@@ -644,7 +730,7 @@ def main():
     parser.add_argument("--ndwi_threshold", type=float, default=NDWI_THRESHOLD,
                         help=f"NDWI cutoff for open-water mask (default: {NDWI_THRESHOLD})")
     parser.add_argument("--min_area",       type=float, default=MIN_AREA_M2,
-                        help=f"Min polygon area in m^2 (default: {MIN_AREA_M2})")
+                        help=f"Min polygon area in m² (default: {MIN_AREA_M2})")
     parser.add_argument("--ic_threshold",   type=float, default=IC_THRESHOLD,
                         help=f"IC block filter: skip chip if bright-pixel fraction exceeds this (default: {IC_THRESHOLD})")
     args = parser.parse_args()
