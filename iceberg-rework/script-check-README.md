@@ -12,7 +12,6 @@ All scripts live in [`iceberg-rework/scripts/`](scripts/), the same directory th
 |---|---|---|
 | [`scripts/_method_common.py`](scripts/_method_common.py) | (shared) | Provenance writers + skip-reason constants imported by every method script |
 | [`scripts/threshold_tifs.py`](scripts/threshold_tifs.py) | TR | Fixed B08 NIR threshold on raw chip |
-| [`scripts/threshold_masked_tifs.py`](scripts/threshold_masked_tifs.py) | TR (NDWI) | Same threshold but restricted to NDWI > 0 open-water pixels (sensitivity branch) |
 | [`scripts/otsu_threshold_tifs.py`](scripts/otsu_threshold_tifs.py) | OT | Per-chip Otsu threshold on raw B08 |
 | [`scripts/densecrf_tifs.py`](scripts/densecrf_tifs.py) | UNet+CRF | DenseCRF refinement of UNet++ softmax probabilities |
 | [`scripts/crf_utils.py`](scripts/crf_utils.py) | (shared) | DenseCRF wrapper used by `densecrf_tifs.py` |
@@ -35,44 +34,41 @@ If you want to leave inline edits, the GitHub web UI lets you click the pencil i
 | Method | Input | Operation | Key parameters | Min polygon area |
 |---|---|---|---|---|
 | TR | B08 | `B08 >= 0.22` per pixel | `threshold=0.22`, `ic_threshold=0.15` | 100 m² |
-| TR (NDWI) | B03, B08 | `(B08 >= 0.22) AND (NDWI > 0)` | `nir_threshold=0.22`, `ndwi_threshold=0.0` | 100 m² |
 | OT | B08 | per-chip Otsu | `min_otsu_thresh=0.10` floor, `ic_threshold=0.15` | 100 m² |
-| TH | B08 + base mask | `white_tophat(B08, disk(10)) >= 0.05`, then subtract base mask | `se_radius=10` px (100 m), `th_thresh=0.05`, `min_area_px=16` (40 m root length) | 16 px |
 | UNet+CRF | UNet++ softmax + chip RGB | DenseCRF (gaussian + bilateral) | `sxy_g=3`, `compat_g=3`, `sxy_b=40`, `srgb=3`, `compat_b=4`, `iterations=5` | 100 m² |
 | UNet+TR | UNet++ softmax band 1 | `P(iceberg) >= 0.22` | `threshold=0.22` | 100 m² |
 | UNet+OT | UNet++ softmax band 1 | per-chip Otsu on `P(iceberg)` | flat-prob and IC guards | 100 m² |
+| TH | B08 + base mask | `white_tophat(B08, disk(10)) >= 0.05`, then subtract base mask | `se_radius=10` px (100 m), `th_thresh=0.05`, `min_area_px=16` (40 m root length) | 16 px |
 
-The IC chip-rejection rule is from Fisser and others (2025), eq. 2: the original IC filter operates on 10 km blocks of the source tile; we apply the same `B08 >= 0.22` cutoff and the same 15 % rule at the chip level (2.56 km) because the dataset stores pre-tiled chips, not source tiles. The rule fires identically in TR, TR (NDWI), OT, and UNet+OT: if more than 15 % of pixels in a chip exceed the iceberg-defining threshold for that method, the chip is logged in `skipped_chips.csv` with reason `ic_block_filter` and excluded from the per-method aggregate. Skipped chips never silently disappear from the comparison; they are counted alongside accuracy metrics.
+The IC chip-rejection rule is from Fisser and others (2025), eq. 2: the original IC filter operates on 10 km blocks of the source tile; we apply the same `B08 >= 0.22` cutoff and the same 15 % rule at the chip level (2.56 km) because the dataset stores pre-tiled chips, not source tiles. The rule fires identically in TR, OT, and UNet+OT: if more than 15 % of pixels in a chip exceed the iceberg-defining threshold for that method, the chip is logged in `skipped_chips.csv` with reason `ic_block_filter` and excluded from the per-method aggregate. Skipped chips never silently disappear from the comparison; they are counted alongside accuracy metrics.
 
 ## What I would like you to check
 
-We have done in-house verification on a number of parameters (Fisser-paper citation audit, IC cutoff sweep, polygonisation-artifact audit, 8- vs 4-connectivity polygonisation, Otsu floor distribution, raw vs log-B08 Otsu, IC test against fixed reference vs per-chip Otsu, IC / Otsu order of operations, NDWI threshold sweep, UNet probability-threshold F1 sweep, flat-prob and prob-floor distributions). The pre-baked answers are stamped into the live scripts and summarised in `paper-writing/methods_draft.md` Section 2.14, with full per-chip CSVs and figures under `paper-writing/figure_review/script_check_answers/`. The questions below are what those checks could not settle, and where I would most value your eyes. A one-liner is enough where things look fine; the value of this review is catching the things I have not flagged.
+We have done in-house verification on a number of parameters (Fisser-paper citation audit, IC cutoff sweep, polygonisation-artifact audit, 8- vs 4-connectivity polygonisation, Otsu floor distribution, raw vs log-B08 Otsu, IC test against fixed reference vs per-chip Otsu, IC / Otsu order of operations, UNet probability-threshold F1 sweep, flat-prob and prob-floor distributions). The pre-baked answers are stamped into the live scripts and summarised in `paper-writing/methods_draft.md` Section 2.14, with full per-chip CSVs and figures under `paper-writing/figure_review/script_check_answers/`. The questions below are what those checks could not settle, and where I would most value your eyes. A one-liner is enough where things look fine; the value of this review is catching the things I have not flagged.
 
 ### `threshold_tifs.py` (TR)
 
 (All open questions for this method have been pre-checked; see `paper-writing/methods_draft.md` Section 2.14.)
 
-### `threshold_masked_tifs.py` (TR with NDWI water mask)
-
-- **AND with B08 >= 0.22.** A pixel is an iceberg only if both criteria pass. This kills sea ice (B08 high, NDWI low) and clouds (NDWI low), but also kills very bright icebergs whose NDWI may dip below 0 if B08 saturates. Is the AND defensible, or should it be a soft union with a higher B08 threshold for non-water pixels?
-
 ### `otsu_threshold_tifs.py` (OT)
 
 (All open questions for this method have been pre-checked; see `paper-writing/methods_draft.md` Section 2.14.)
-
-### `tophat_recover.py` (TH)
-
-- **Structuring element.** `disk(10)` at 10 m pixels, i.e. SE radius 100 m. Drawn from Fisser 2024's reference-iceberg lower bound: they only visually delineated icebergs with root length above 100 m because at 10 m resolution the spectrally mixed edge dominates the area of smaller icebergs (Fisser 2024 p. 5). Our white top-hat targets the gap between Fisser 2025's 40 m dataset minimum and Fisser 2024's 100 m visual-delineation floor. Is the disk shape and that radius defensible for the 40 m to 100 m size range, or should we sweep over multiple radii and combine?
-- **Top-hat threshold.** `th_thresh = 0.05` reflectance units. Honestly chosen by eye on a few chips. If there is a more principled estimator (e.g., chip-wise σ of the top-hat response, or an Otsu of the response), I would adopt it.
-- **Min component size.** `min_area_px = 16` (~40 m root length). Matches the 40 m root-length filter we apply globally on the annotation side. Reasonable, or should the cutoff be smaller for a recovery method whose entire job is to find missed small icebergs?
-- **Subtraction of base mask.** Recovered candidates are `(response >= th_thresh) AND NOT base_mask`. Base mask is built from `<stem>_pred.tif` if present, else by rasterising the base method's polygons. Any concerns about the rasterised-polygon path on per-chip CRS mismatches?
 
 ### `densecrf_tifs.py` + `crf_utils.py` (UNet+CRF)
 
 - **CRF parameters.** `sxy_gaussian = 3`, `compat_gaussian = 3`, `sxy_bilateral = 40`, `srgb_bilateral = 3`, `compat_bilateral = 4`, `iterations = 5`. Drawn from a 2-point sandbox sweep on a holdout subset. The bilateral-spatial scale (40 px = 400 m) feels generous for our 256 x 256 chip; is this defensible for icebergs at this resolution, or should `sxy_bilateral` be closer to 5 to 15 px?
 - **Bilateral image.** The pairwise bilateral term consumes the chip after `scale_chip_to_uint8()`, which independently percentile-stretches each band (2/98) and casts to uint8. So the bilateral term is acting on a uint8 RGB-like rendering of B04/B03/B08, not on raw reflectance and not on grayscale. Is per-band 2/98 stretching appropriate here, or does it overweight bright outliers and pull boundaries onto noise?
 - **Two-class CRF.** Ocean vs iceberg only. Shadow has been merged into iceberg upstream during training so the model never emits a third channel. Is the two-class CRF the right setup given that bright sea ice and dark shadow can both touch real iceberg edges?
-- **Argmax over five iterations.** Standard mean-field schedule. We have not measured whether more iterations meaningfully change the result. Is five enough?
+
+(Iteration-count convergence has been pre-checked; see `paper-writing/methods_draft.md` Section 2.14 Q20.)
+
+### `tophat_recover.py` (TH) — newly generated, please prioritise
+
+Top-hat results were generated only days ago and will be in the paper's Phase B tables. The questions below are the ones the in-house checks could not settle.
+
+- **Min component size.** `min_area_px = 16` (~40 m root length). Matches the 40 m root-length filter we apply globally on the annotation side. Reasonable, or should the cutoff be smaller for a recovery method whose entire job is to find missed small icebergs?
+
+(SE radius, top-hat threshold, and base-mask CRS path have been pre-checked; see `paper-writing/methods_draft.md` Section 2.14 Q12, Q13, Q14.)
 
 ## How the methods plug together
 
@@ -80,7 +76,6 @@ We have done in-house verification on a number of parameters (Fisser-paper citat
 chip .tif  (B04/B03/B08, 10 m)
    |
    |--> threshold_tifs.py        --> TR/all_icebergs.gpkg
-   |--> threshold_masked_tifs.py --> TR_NDWI/all_icebergs.gpkg
    |--> otsu_threshold_tifs.py   --> OT/all_icebergs.gpkg + diagnostic PNGs
    |
    |--> predict_tifs.py [not in this pack] --> *_probs.tif (2 bands: ocean, iceberg)
@@ -438,322 +433,6 @@ if __name__ == "__main__":
 </details>
 
 <details>
-<summary><strong>threshold_masked_tifs.py</strong> — TR with NDWI water mask (307 lines)</summary>
-
-```python
-"""
-threshold_masked_tifs.py — Apply Fisser B08 ≥ 0.12 NIR threshold restricted to
-open-water pixels identified by an NDWI water mask.
-
-NDWI = (B03 - B08) / (B03 + B08 + ε)
-Pixels where NDWI > ndwi_threshold are classified as open water.
-B08 ≥ 0.12 is then applied ONLY within open-water pixels.
-
-This prevents bright sea ice, clouds, and snow from being counted as icebergs,
-giving a fairer comparison to UNet++ which learned to distinguish these classes.
-
-Chip band order (set by chip_sentinel2.py): B04=0, B03=1, B08=2
-
-Usage:
-  python threshold_masked_tifs.py \\
-      --chips_dir chips/KQ/sza_gt75/tifs \\
-      --out_dir   area_comparison/KQ/sza_gt75/threshold_masked
-
-Output:
-  out_dir/all_icebergs_threshold_masked.gpkg
-"""
-
-import os
-import argparse
-import warnings
-from glob import glob
-
-import numpy as np
-import rasterio as rio
-from rasterio.features import shapes as rio_shapes
-import geopandas as gpd
-from shapely.geometry import shape
-import pandas as pd
-
-warnings.filterwarnings("ignore")
-
-NIR_THRESHOLD  = 0.22   # Fisser 2024 B08 threshold (0.12) + 0.10 DN offset correction
-                        # All scenes baseline ≥4.0: chip_sentinel2.py does not subtract +1000 DN offset
-NDWI_THRESHOLD = 0.0    # McFeeters 1996 default. Fisser 2024 does not use NDWI;
-                        # this is a chip-level land-edge safeguard. KQ sweep
-                        # (sweep_ndwi_threshold.py) shows raising to 0.05 cuts
-                        # 21% of total iceberg area (26% at SZA > 75°) by killing
-                        # iceberg-water mixed pixels, not land edges, so 0 stays.
-MIN_AREA_M2    = 100    # ~10×10 m minimum polygon
-IC_THRESHOLD   = 0.15   # Fisser 2025 IC block filter (eq. 2): skip chip if >15% of pixels exceed NIR threshold
-                        # Flags chips dominated by sea ice rather than open water with icebergs
-                        # Original Fisser 2025 rule: 10 km block; we apply at 2.56 km chip level (pre-tiled chips)
-
-
-def _apply_thresholds(
-    b03,
-    b08,
-    transform,
-    source_name,
-    nir_threshold=NIR_THRESHOLD,
-    ndwi_threshold=NDWI_THRESHOLD,
-    min_area_m2=MIN_AREA_M2,
-    ic_threshold=IC_THRESHOLD,
-):
-    """Apply IC + NDWI + B08 thresholds to band arrays.
-
-    Inputs:
-        b03, b08    : 2-D float reflectance arrays.
-        transform   : rasterio affine for polygonization.
-        source_name : basename string stored on each polygon record.
-    Returns dict: ic_skipped, records, n_polygons, total_area_m2,
-                  water_px, iceberg_px, ic_frac.
-    """
-    out = {
-        "ic_skipped"   : False,
-        "records"      : [],
-        "n_polygons"   : 0,
-        "total_area_m2": 0.0,
-        "water_px"     : 0,
-        "iceberg_px"   : 0,
-        "ic_frac"      : float("nan"),
-    }
-
-    # 1. IC block filter (Fisser 2025): skip sea-ice-dominated chips
-    ic_frac = float((b08 >= nir_threshold).mean())
-    out["ic_frac"] = ic_frac
-    if ic_frac > ic_threshold:
-        out["ic_skipped"] = True
-        return out
-
-    # 2. NDWI water mask: open water has positive NDWI
-    ndwi       = (b03 - b08) / (b03 + b08 + 1e-6)
-    water_mask = (ndwi > ndwi_threshold).astype(np.uint8)
-    out["water_px"] = int(water_mask.sum())
-
-    # 3. Iceberg mask: bright NIR within open-water pixels
-    iceberg_mask = ((b08 >= nir_threshold) & (water_mask == 1)).astype(np.uint8)
-    out["iceberg_px"] = int(iceberg_mask.sum())
-
-    # 4. Polygonize and filter by min-area
-    records = []
-    for geom_dict, val in rio_shapes(iceberg_mask, transform=transform):
-        if val == 0:
-            continue
-        geom = shape(geom_dict)
-        if geom.is_empty or geom.area < min_area_m2:
-            continue
-        records.append({
-            "geometry"   : geom,
-            "class_id"   : 1,
-            "class_name" : "iceberg",
-            "area_m2"    : round(geom.area, 2),
-            "source_file": source_name,
-        })
-
-    out["records"]       = records
-    out["n_polygons"]    = len(records)
-    out["total_area_m2"] = float(sum(r["area_m2"] for r in records))
-    return out
-
-
-def detect_icebergs_in_chip(
-    tif_path,
-    b03_idx=1,
-    b08_idx=2,
-    nir_threshold=NIR_THRESHOLD,
-    ndwi_threshold=NDWI_THRESHOLD,
-    min_area_m2=MIN_AREA_M2,
-    ic_threshold=IC_THRESHOLD,
-):
-    """Run NDWI-masked Fisser threshold on one chip read from disk.
-
-    Inputs:
-        tif_path         : path to a Sentinel-2 chip GeoTIFF.
-        b03_idx, b08_idx : 0-indexed band positions.
-    Returns dict: band_skipped, n_bands, crs, plus all keys from
-                  _apply_thresholds (ic_skipped, records, n_polygons,
-                  total_area_m2, water_px, iceberg_px, ic_frac).
-    """
-    out = {
-        "band_skipped" : False,
-        "n_bands"      : 0,
-        "crs"          : None,
-        "ic_skipped"   : False,
-        "records"      : [],
-        "n_polygons"   : 0,
-        "total_area_m2": 0.0,
-        "water_px"     : 0,
-        "iceberg_px"   : 0,
-        "ic_frac"      : float("nan"),
-    }
-
-    # 1. Read chip
-    with rio.open(tif_path) as src:
-        chip = src.read().astype(np.float32)
-        meta = src.meta.copy()
-    out["crs"]     = meta["crs"]
-    out["n_bands"] = chip.shape[0]
-
-    # 2. Validate band count
-    if out["n_bands"] <= max(b03_idx, b08_idx):
-        out["band_skipped"] = True
-        return out
-
-    # 3. Apply thresholds on band arrays
-    inner = _apply_thresholds(
-        chip[b03_idx],
-        chip[b08_idx],
-        meta["transform"],
-        os.path.basename(tif_path),
-        nir_threshold  = nir_threshold,
-        ndwi_threshold = ndwi_threshold,
-        min_area_m2    = min_area_m2,
-        ic_threshold   = ic_threshold,
-    )
-    out.update(inner)
-    return out
-
-
-def apply_masked_threshold(
-    chips_dir,
-    out_dir,
-    b03_idx=1,
-    b08_idx=2,
-    nir_threshold=NIR_THRESHOLD,
-    ndwi_threshold=NDWI_THRESHOLD,
-    min_area_m2=MIN_AREA_M2,
-    ic_threshold=IC_THRESHOLD,
-):
-    os.makedirs(out_dir, exist_ok=True)
-
-    tif_files = sorted(glob(os.path.join(chips_dir, "*.tif")))
-    if not tif_files:
-        print(f"No .tif files found in {chips_dir}")
-        return
-
-    print(f"Found {len(tif_files)} chips")
-    print(f"  NIR threshold : B08 >= {nir_threshold}")
-    print(f"  NDWI mask     : NDWI > {ndwi_threshold} (open water only)")
-    print(f"  IC filter     : skip chip if bright-pixel fraction > {ic_threshold}")
-    print(f"  Min area      : {min_area_m2} m²\n")
-
-    all_gdfs  = []
-    n_skipped = 0
-    n_ic      = 0
-
-    for i, tif_path in enumerate(tif_files):
-        stem = os.path.splitext(os.path.basename(tif_path))[0]
-
-        # 1. Detect icebergs on this chip
-        res = detect_icebergs_in_chip(
-            tif_path,
-            b03_idx        = b03_idx,
-            b08_idx        = b08_idx,
-            nir_threshold  = nir_threshold,
-            ndwi_threshold = ndwi_threshold,
-            min_area_m2    = min_area_m2,
-            ic_threshold   = ic_threshold,
-        )
-
-        # 2. Log skipped chips
-        if res["band_skipped"]:
-            print(f"  [{i+1}/{len(tif_files)}] SKIP {stem}: only {res['n_bands']} band(s)")
-            n_skipped += 1
-            continue
-
-        if res["ic_skipped"]:
-            print(
-                f"  [{i+1:>4}/{len(tif_files)}] IC   {stem[:55]}  ic_frac={res['ic_frac']:.2f}"
-            )
-            n_ic += 1
-            continue
-
-        # 3. Log per-chip detection counts
-        print(
-            f"  [{i+1:>4}/{len(tif_files)}] {stem[:55]}  "
-            f"water_px={res['water_px']:>6}  icebergs={res['n_polygons']}"
-        )
-
-        # 4. Accumulate polygon records into a GeoDataFrame
-        if res["records"]:
-            gdf = gpd.GeoDataFrame(res["records"], crs=res["crs"])
-            all_gdfs.append(gdf)
-
-    if not all_gdfs:
-        print("\nNo icebergs detected across all chips.")
-        if n_ic:
-            print(f"IC-filtered: {n_ic} chips (sea ice contamination)")
-        if n_skipped:
-            print(f"Skipped:     {n_skipped} chips (too few bands)")
-        return
-
-    target_crs = all_gdfs[0].crs
-    reprojected = [gdf.to_crs(target_crs) if gdf.crs != target_crs else gdf for gdf in all_gdfs]
-    merged = gpd.GeoDataFrame(pd.concat(reprojected, ignore_index=True), crs=target_crs)
-    merged["iceberg_id"] = range(1, len(merged) + 1)
-
-    icebergs = merged[merged["class_name"] == "iceberg"]
-    print(f"\n{'─'*50}")
-    print(f"Total iceberg polygons : {len(icebergs)}")
-    if len(icebergs) > 0:
-        print(f"  min    = {icebergs['area_m2'].min():.1f} m²")
-        print(f"  median = {icebergs['area_m2'].median():.1f} m²")
-        print(f"  mean   = {icebergs['area_m2'].mean():.1f} m²")
-        print(f"  max    = {icebergs['area_m2'].max():.1f} m²")
-        print(f"  total  = {icebergs['area_m2'].sum()/1e6:.4f} km²")
-    if n_ic:
-        print(f"IC-filtered: {n_ic} chips (sea ice contamination)")
-    if n_skipped:
-        print(f"Skipped:     {n_skipped} chips (too few bands)")
-    print(f"{'─'*50}")
-
-    out_path = os.path.join(out_dir, "all_icebergs_threshold_masked.gpkg")
-    merged.to_file(out_path, driver="GPKG")
-    print(f"\nSaved: {out_path}")
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Apply NDWI-masked Fisser B08 threshold to S2 chip .tifs"
-    )
-    parser.add_argument("--chips_dir",      required=True,
-                        help="Directory of .tif chip files")
-    parser.add_argument("--out_dir",        required=True,
-                        help="Output directory for all_icebergs_threshold_masked.gpkg")
-    parser.add_argument("--b03_idx",        type=int,   default=1,
-                        help="0-indexed band position of B03 in chip stack (default: 1)")
-    parser.add_argument("--b08_idx",        type=int,   default=2,
-                        help="0-indexed band position of B08 in chip stack (default: 2)")
-    parser.add_argument("--threshold",      type=float, default=NIR_THRESHOLD,
-                        help=f"NIR reflectance threshold (default: {NIR_THRESHOLD})")
-    parser.add_argument("--ndwi_threshold", type=float, default=NDWI_THRESHOLD,
-                        help=f"NDWI cutoff for open-water mask (default: {NDWI_THRESHOLD})")
-    parser.add_argument("--min_area",       type=float, default=MIN_AREA_M2,
-                        help=f"Min polygon area in m² (default: {MIN_AREA_M2})")
-    parser.add_argument("--ic_threshold",   type=float, default=IC_THRESHOLD,
-                        help=f"IC block filter: skip chip if bright-pixel fraction exceeds this (default: {IC_THRESHOLD})")
-    args = parser.parse_args()
-
-    apply_masked_threshold(
-        chips_dir      = args.chips_dir,
-        out_dir        = args.out_dir,
-        b03_idx        = args.b03_idx,
-        b08_idx        = args.b08_idx,
-        nir_threshold  = args.threshold,
-        ndwi_threshold = args.ndwi_threshold,
-        min_area_m2    = args.min_area,
-        ic_threshold   = args.ic_threshold,
-    )
-
-
-if __name__ == "__main__":
-    main()
-```
-
-</details>
-
-<details>
 <summary><strong>otsu_threshold_tifs.py</strong> — OT, per-chip Otsu on B08 (319 lines)</summary>
 
 ```python
@@ -1071,307 +750,6 @@ def main():
         args.chips_dir, args.out_dir, args.b08_idx,
         args.min_area, args.ic_threshold, args.min_otsu_thresh,
     )
-
-
-if __name__ == "__main__":
-    main()
-```
-
-</details>
-
-<details>
-<summary><strong>tophat_recover.py</strong> — TH, white top-hat post-processor (293 lines)</summary>
-
-```python
-"""
-tophat_recover.py: small-iceberg recovery via white top-hat on B08.
-
-For each input chip in --chips_dir, reads the B08 band, applies a white
-top-hat morphological filter (disk structuring element of radius
---se_radius pixels), thresholds the response at --th_thresh, drops
-connected components below --min_area_px, subtracts pixels already
-covered by the base method's per-chip prediction, and writes a per-chip
-gpkg containing the union of base polygons + recovered polygons.
-
-Outputs (per --out_dir):
-  gpkgs/<chip_stem>_icebergs.gpkg   per-chip merged polygons (base + TH)
-  all_icebergs.gpkg                 concat across chips
-  recovery_stats.csv                per-chip counts of base / TH / total
-  method_config.json                provenance: SE radius, threshold, base method id
-
-Usage:
-  python scripts/tophat_recover.py \
-      --chips_dir   data/v4_clean/test_chips/sza_lt65 \
-      --base_dir    runs/exp_baseline_v1/<ts>/inference/sza_lt65/UNet \
-      --out_dir     runs/exp_baseline_v1/<ts>/inference/sza_lt65/UNet_TH
-
-Notes:
-- Designed as a post-processor; does not need a UNet checkpoint.
-- Input chip and prediction tifs must share pixel grid (256x256, 10 m).
-- Idempotent at the same parameters: rerunning overwrites outputs.
-"""
-
-import argparse
-import csv
-import json
-import os
-from datetime import datetime, timezone
-
-import numpy as np
-import rasterio
-from rasterio.features import rasterize as rio_rasterize, shapes as rio_shapes
-import geopandas as gpd
-import pandas as pd
-from shapely.geometry import shape as shapely_shape
-from skimage.morphology import disk, white_tophat
-from skimage.measure import label
-
-from _method_common import get_git_sha, sha256_of_file
-
-# 1. Defaults
-DEFAULT_SE_RADIUS = 10       # 100 m at 10 m pixels (Fisser cap on small icebergs)
-DEFAULT_TH_THRESH = 0.05     # response threshold in reflectance units
-DEFAULT_MIN_AREA_PX = 16     # 40 m root length, matches the global cutoff
-PIXEL_AREA_M2 = 100.0
-
-
-def read_b08(tif_path):
-    """Return the B08 band (band 3) as a float32 array."""
-    with rasterio.open(tif_path) as src:
-        if src.count < 3:
-            raise ValueError(f"{tif_path}: expected >= 3 bands, got {src.count}")
-        b08 = src.read(3).astype(np.float32)
-        transform = src.transform
-        crs = src.crs
-    return b08, transform, crs
-
-
-def read_base_polygons(base_dir, stem, all_polys_cache=None):
-    """
-    Load base method polygons for one chip. Three fallbacks in order:
-      1. per-chip gpkgs/<stem>_icebergs.gpkg
-      2. all_icebergs.gpkg sliced by source_file == <stem>.tif
-      3. None
-    """
-    p = os.path.join(base_dir, "gpkgs", f"{stem}_icebergs.gpkg")
-    if os.path.exists(p):
-        return gpd.read_file(p)
-
-    if all_polys_cache is None:
-        all_p = os.path.join(base_dir, "all_icebergs.gpkg")
-        if not os.path.exists(all_p):
-            return None
-        all_polys_cache = gpd.read_file(all_p)
-
-    src_name = f"{stem}.tif"
-    sub = all_polys_cache[all_polys_cache.get("source_file") == src_name]
-    return sub if len(sub) > 0 else None
-
-
-def read_base_mask(base_dir, stem, ref_shape, ref_transform, all_polys_cache=None):
-    """
-    Build a binary mask of the base method's polygon footprint on the chip's
-    pixel grid. Prefers <stem>_pred.tif under geotiffs/, falls back to
-    rasterising the polygons read by read_base_polygons.
-    Returns a uint8 array shaped like ref_shape, or None when no base
-    information exists for this chip.
-    """
-    # 1. Direct geotiff path (UNet only writes this; others do not)
-    pred_tif = os.path.join(base_dir, "geotiffs", f"{stem}_pred.tif")
-    if os.path.exists(pred_tif):
-        with rasterio.open(pred_tif) as src:
-            return (src.read(1) > 0).astype(np.uint8)
-
-    # 2. Rasterise polygons (per-chip gpkg or all_icebergs slice)
-    polys = read_base_polygons(base_dir, stem, all_polys_cache=all_polys_cache)
-    if polys is None or len(polys) == 0:
-        return None
-    geoms = [(g, 1) for g in polys.geometry if g is not None and not g.is_empty]
-    if not geoms:
-        return None
-    return rio_rasterize(
-        geoms,
-        out_shape=ref_shape,
-        transform=ref_transform,
-        fill=0,
-        dtype="uint8",
-    )
-
-
-def recover_tophat(b08, base_mask, se_radius, th_thresh, min_area_px):
-    """
-    Run the white top-hat recovery step.
-    Returns a binary mask of NEW iceberg pixels (not already in base_mask).
-    """
-    # 1. White top-hat highlights bright spots smaller than the SE
-    se = disk(se_radius)
-    response = white_tophat(b08, se)
-
-    # 2. Threshold + drop pixels already covered by the base method
-    candidate = (response >= th_thresh).astype(np.uint8)
-    if base_mask is not None:
-        candidate &= (base_mask == 0).astype(np.uint8)
-
-    # 3. Filter connected components below the size cutoff
-    labels, n = label(candidate, connectivity=2, return_num=True)
-    if n == 0:
-        return np.zeros_like(candidate)
-    sizes = np.bincount(labels.ravel())
-    keep = np.zeros_like(sizes, dtype=bool)
-    keep[1:] = sizes[1:] >= min_area_px
-    return keep[labels].astype(np.uint8)
-
-
-def mask_to_polygons(mask, transform, source_file):
-    """Vectorise a binary mask into shapely polygons; returns list of records."""
-    if mask.sum() == 0:
-        return []
-    rows = []
-    iceberg_id = 1
-    for geom, val in rio_shapes(mask, mask=mask.astype(bool), transform=transform):
-        if val == 0:
-            continue
-        poly = shapely_shape(geom)
-        rows.append({
-            "class_id":    1,
-            "class_name":  "iceberg",
-            "area_m2":     poly.area,
-            "source_file": source_file,
-            "iceberg_id":  iceberg_id,
-            "geometry":    poly,
-        })
-        iceberg_id += 1
-    return rows
-
-
-def main():
-    parser = argparse.ArgumentParser(description="White top-hat small-iceberg recovery on a base method's outputs")
-    parser.add_argument("--chips_dir", required=True, help="dir of input *.tif (B04/B03/B08)")
-    parser.add_argument("--base_dir",  required=True, help="dir of base method outputs (must have geotiffs/ + gpkgs/)")
-    parser.add_argument("--out_dir",   required=True, help="dir to write the recovered method outputs")
-    parser.add_argument("--base_method_id", default="UNet", help="label for the base method (provenance only)")
-    parser.add_argument("--se_radius", type=int, default=DEFAULT_SE_RADIUS,
-                        help="disk SE radius in pixels (default 10 = 100 m)")
-    parser.add_argument("--th_thresh", type=float, default=DEFAULT_TH_THRESH,
-                        help="top-hat response threshold in reflectance units")
-    parser.add_argument("--min_area_px", type=int, default=DEFAULT_MIN_AREA_PX,
-                        help="drop recovered components below this pixel area")
-    args = parser.parse_args()
-
-    # 1. Stage output directories
-    os.makedirs(os.path.join(args.out_dir, "gpkgs"), exist_ok=True)
-
-    # 2. Iterate chips
-    chip_paths = sorted(
-        os.path.join(args.chips_dir, f)
-        for f in os.listdir(args.chips_dir) if f.endswith(".tif")
-    )
-    if not chip_paths:
-        raise SystemExit(f"no tifs found under {args.chips_dir}")
-
-    stats_rows = []
-    all_polys = []
-
-    # Cache the cross-chip all_icebergs.gpkg once: TR/OT only emit this file,
-    # so re-reading it per chip would dominate runtime.
-    all_polys_cache = None
-    all_icebergs_path = os.path.join(args.base_dir, "all_icebergs.gpkg")
-    if os.path.exists(all_icebergs_path):
-        all_polys_cache = gpd.read_file(all_icebergs_path)
-
-    for chip_path in chip_paths:
-        stem = os.path.splitext(os.path.basename(chip_path))[0]
-        b08, transform, _crs = read_b08(chip_path)
-        base_mask = read_base_mask(
-            args.base_dir, stem, b08.shape, transform, all_polys_cache,
-        )
-
-        # 3. Run recovery on this chip
-        recovered = recover_tophat(
-            b08=b08,
-            base_mask=base_mask,
-            se_radius=args.se_radius,
-            th_thresh=args.th_thresh,
-            min_area_px=args.min_area_px,
-        )
-
-        recovered_polys = mask_to_polygons(recovered, transform,
-                                            source_file=os.path.basename(chip_path))
-
-        # 4. Merge with base polygons
-        base_gdf = read_base_polygons(args.base_dir, stem, all_polys_cache)
-        n_base = len(base_gdf) if base_gdf is not None else 0
-        n_recov = len(recovered_polys)
-
-        if base_gdf is not None and n_base > 0:
-            recov_gdf = gpd.GeoDataFrame(recovered_polys, crs=base_gdf.crs) if recovered_polys else None
-            merged = pd.concat([base_gdf, recov_gdf], ignore_index=True) if recov_gdf is not None else base_gdf
-        elif recovered_polys:
-            merged = gpd.GeoDataFrame(recovered_polys)
-        else:
-            merged = gpd.GeoDataFrame(columns=["class_id", "class_name", "area_m2",
-                                                "source_file", "iceberg_id", "geometry"])
-
-        # Re-id sequentially after the merge
-        if len(merged) > 0:
-            merged["iceberg_id"] = list(range(1, len(merged) + 1))
-
-        out_gpkg = os.path.join(args.out_dir, "gpkgs", f"{stem}_icebergs.gpkg")
-        if len(merged) > 0:
-            merged.to_file(out_gpkg, driver="GPKG")
-        all_polys.append(merged)
-
-        stats_rows.append({
-            "chip_stem":        stem,
-            "n_base_polygons":  n_base,
-            "n_recovered":      n_recov,
-            "n_total":          n_base + n_recov,
-        })
-
-    # 5. Concatenated gpkg + stats CSV
-    # Fisser synthetic chips have CRS = None, real Roboflow chips span UTM 24N
-    # and 25N, so a single CRS for the cross-chip concat does not exist. The
-    # eval script reads per-chip gpkgs, so the combined file is informational
-    # only; warn but continue if the concat fails.
-    try:
-        combined = pd.concat(all_polys, ignore_index=True) if all_polys else pd.DataFrame()
-        if len(combined) > 0:
-            combined.to_file(os.path.join(args.out_dir, "all_icebergs.gpkg"), driver="GPKG")
-    except Exception as exc:
-        print(f"WARN: cross-chip all_icebergs.gpkg skipped ({exc.__class__.__name__}: {exc})")
-
-    stats_path = os.path.join(args.out_dir, "recovery_stats.csv")
-    with open(stats_path, "w", newline="") as f:
-        writer = csv.DictWriter(
-            f, fieldnames=["chip_stem", "n_base_polygons", "n_recovered", "n_total"]
-        )
-        writer.writeheader()
-        writer.writerows(stats_rows)
-
-    # 6. Method config (provenance)
-    repo_dir = os.path.dirname(os.path.abspath(__file__))
-    cfg = {
-        "method":           f"{args.base_method_id}_TH",
-        "base_method":      args.base_method_id,
-        "base_dir":         os.path.abspath(args.base_dir),
-        "chips_dir":        os.path.abspath(args.chips_dir),
-        "se_radius":        args.se_radius,
-        "th_thresh":        args.th_thresh,
-        "min_area_px":      args.min_area_px,
-        "n_chips_processed": len(chip_paths),
-        "n_polygons_base":  int(sum(r["n_base_polygons"] for r in stats_rows)),
-        "n_polygons_recov": int(sum(r["n_recovered"] for r in stats_rows)),
-        "n_polygons_total": int(sum(r["n_total"] for r in stats_rows)),
-        "git_sha":          get_git_sha(repo_dir),
-        "created_utc":      datetime.now(timezone.utc).isoformat(timespec="seconds"),
-    }
-    with open(os.path.join(args.out_dir, "method_config.json"), "w") as f:
-        json.dump(cfg, f, indent=2)
-
-    print(f"top-hat recovery written to {args.out_dir}/")
-    print(f"  base polygons:      {cfg['n_polygons_base']}")
-    print(f"  recovered polygons: {cfg['n_polygons_recov']}")
-    print(f"  total:              {cfg['n_polygons_total']}")
 
 
 if __name__ == "__main__":
@@ -2094,6 +1472,307 @@ def main():
         print("\nNo icebergs detected.")
     print(f"Method config  : {cfg_path}")
     print(f"Skipped chips  : {skip_path}")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+</details>
+
+<details>
+<summary><strong>tophat_recover.py</strong> — TH, white top-hat post-processor (293 lines)</summary>
+
+```python
+"""
+tophat_recover.py: small-iceberg recovery via white top-hat on B08.
+
+For each input chip in --chips_dir, reads the B08 band, applies a white
+top-hat morphological filter (disk structuring element of radius
+--se_radius pixels), thresholds the response at --th_thresh, drops
+connected components below --min_area_px, subtracts pixels already
+covered by the base method's per-chip prediction, and writes a per-chip
+gpkg containing the union of base polygons + recovered polygons.
+
+Outputs (per --out_dir):
+  gpkgs/<chip_stem>_icebergs.gpkg   per-chip merged polygons (base + TH)
+  all_icebergs.gpkg                 concat across chips
+  recovery_stats.csv                per-chip counts of base / TH / total
+  method_config.json                provenance: SE radius, threshold, base method id
+
+Usage:
+  python scripts/tophat_recover.py \
+      --chips_dir   data/v4_clean/test_chips/sza_lt65 \
+      --base_dir    runs/exp_baseline_v1/<ts>/inference/sza_lt65/UNet \
+      --out_dir     runs/exp_baseline_v1/<ts>/inference/sza_lt65/UNet_TH
+
+Notes:
+- Designed as a post-processor; does not need a UNet checkpoint.
+- Input chip and prediction tifs must share pixel grid (256x256, 10 m).
+- Idempotent at the same parameters: rerunning overwrites outputs.
+"""
+
+import argparse
+import csv
+import json
+import os
+from datetime import datetime, timezone
+
+import numpy as np
+import rasterio
+from rasterio.features import rasterize as rio_rasterize, shapes as rio_shapes
+import geopandas as gpd
+import pandas as pd
+from shapely.geometry import shape as shapely_shape
+from skimage.morphology import disk, white_tophat
+from skimage.measure import label
+
+from _method_common import get_git_sha, sha256_of_file
+
+# 1. Defaults
+DEFAULT_SE_RADIUS = 10       # 100 m at 10 m pixels (Fisser cap on small icebergs)
+DEFAULT_TH_THRESH = 0.05     # response threshold in reflectance units
+DEFAULT_MIN_AREA_PX = 16     # 40 m root length, matches the global cutoff
+PIXEL_AREA_M2 = 100.0
+
+
+def read_b08(tif_path):
+    """Return the B08 band (band 3) as a float32 array."""
+    with rasterio.open(tif_path) as src:
+        if src.count < 3:
+            raise ValueError(f"{tif_path}: expected >= 3 bands, got {src.count}")
+        b08 = src.read(3).astype(np.float32)
+        transform = src.transform
+        crs = src.crs
+    return b08, transform, crs
+
+
+def read_base_polygons(base_dir, stem, all_polys_cache=None):
+    """
+    Load base method polygons for one chip. Three fallbacks in order:
+      1. per-chip gpkgs/<stem>_icebergs.gpkg
+      2. all_icebergs.gpkg sliced by source_file == <stem>.tif
+      3. None
+    """
+    p = os.path.join(base_dir, "gpkgs", f"{stem}_icebergs.gpkg")
+    if os.path.exists(p):
+        return gpd.read_file(p)
+
+    if all_polys_cache is None:
+        all_p = os.path.join(base_dir, "all_icebergs.gpkg")
+        if not os.path.exists(all_p):
+            return None
+        all_polys_cache = gpd.read_file(all_p)
+
+    src_name = f"{stem}.tif"
+    sub = all_polys_cache[all_polys_cache.get("source_file") == src_name]
+    return sub if len(sub) > 0 else None
+
+
+def read_base_mask(base_dir, stem, ref_shape, ref_transform, all_polys_cache=None):
+    """
+    Build a binary mask of the base method's polygon footprint on the chip's
+    pixel grid. Prefers <stem>_pred.tif under geotiffs/, falls back to
+    rasterising the polygons read by read_base_polygons.
+    Returns a uint8 array shaped like ref_shape, or None when no base
+    information exists for this chip.
+    """
+    # 1. Direct geotiff path (UNet only writes this; others do not)
+    pred_tif = os.path.join(base_dir, "geotiffs", f"{stem}_pred.tif")
+    if os.path.exists(pred_tif):
+        with rasterio.open(pred_tif) as src:
+            return (src.read(1) > 0).astype(np.uint8)
+
+    # 2. Rasterise polygons (per-chip gpkg or all_icebergs slice)
+    polys = read_base_polygons(base_dir, stem, all_polys_cache=all_polys_cache)
+    if polys is None or len(polys) == 0:
+        return None
+    geoms = [(g, 1) for g in polys.geometry if g is not None and not g.is_empty]
+    if not geoms:
+        return None
+    return rio_rasterize(
+        geoms,
+        out_shape=ref_shape,
+        transform=ref_transform,
+        fill=0,
+        dtype="uint8",
+    )
+
+
+def recover_tophat(b08, base_mask, se_radius, th_thresh, min_area_px):
+    """
+    Run the white top-hat recovery step.
+    Returns a binary mask of NEW iceberg pixels (not already in base_mask).
+    """
+    # 1. White top-hat highlights bright spots smaller than the SE
+    se = disk(se_radius)
+    response = white_tophat(b08, se)
+
+    # 2. Threshold + drop pixels already covered by the base method
+    candidate = (response >= th_thresh).astype(np.uint8)
+    if base_mask is not None:
+        candidate &= (base_mask == 0).astype(np.uint8)
+
+    # 3. Filter connected components below the size cutoff
+    labels, n = label(candidate, connectivity=2, return_num=True)
+    if n == 0:
+        return np.zeros_like(candidate)
+    sizes = np.bincount(labels.ravel())
+    keep = np.zeros_like(sizes, dtype=bool)
+    keep[1:] = sizes[1:] >= min_area_px
+    return keep[labels].astype(np.uint8)
+
+
+def mask_to_polygons(mask, transform, source_file):
+    """Vectorise a binary mask into shapely polygons; returns list of records."""
+    if mask.sum() == 0:
+        return []
+    rows = []
+    iceberg_id = 1
+    for geom, val in rio_shapes(mask, mask=mask.astype(bool), transform=transform):
+        if val == 0:
+            continue
+        poly = shapely_shape(geom)
+        rows.append({
+            "class_id":    1,
+            "class_name":  "iceberg",
+            "area_m2":     poly.area,
+            "source_file": source_file,
+            "iceberg_id":  iceberg_id,
+            "geometry":    poly,
+        })
+        iceberg_id += 1
+    return rows
+
+
+def main():
+    parser = argparse.ArgumentParser(description="White top-hat small-iceberg recovery on a base method's outputs")
+    parser.add_argument("--chips_dir", required=True, help="dir of input *.tif (B04/B03/B08)")
+    parser.add_argument("--base_dir",  required=True, help="dir of base method outputs (must have geotiffs/ + gpkgs/)")
+    parser.add_argument("--out_dir",   required=True, help="dir to write the recovered method outputs")
+    parser.add_argument("--base_method_id", default="UNet", help="label for the base method (provenance only)")
+    parser.add_argument("--se_radius", type=int, default=DEFAULT_SE_RADIUS,
+                        help="disk SE radius in pixels (default 10 = 100 m)")
+    parser.add_argument("--th_thresh", type=float, default=DEFAULT_TH_THRESH,
+                        help="top-hat response threshold in reflectance units")
+    parser.add_argument("--min_area_px", type=int, default=DEFAULT_MIN_AREA_PX,
+                        help="drop recovered components below this pixel area")
+    args = parser.parse_args()
+
+    # 1. Stage output directories
+    os.makedirs(os.path.join(args.out_dir, "gpkgs"), exist_ok=True)
+
+    # 2. Iterate chips
+    chip_paths = sorted(
+        os.path.join(args.chips_dir, f)
+        for f in os.listdir(args.chips_dir) if f.endswith(".tif")
+    )
+    if not chip_paths:
+        raise SystemExit(f"no tifs found under {args.chips_dir}")
+
+    stats_rows = []
+    all_polys = []
+
+    # Cache the cross-chip all_icebergs.gpkg once: TR/OT only emit this file,
+    # so re-reading it per chip would dominate runtime.
+    all_polys_cache = None
+    all_icebergs_path = os.path.join(args.base_dir, "all_icebergs.gpkg")
+    if os.path.exists(all_icebergs_path):
+        all_polys_cache = gpd.read_file(all_icebergs_path)
+
+    for chip_path in chip_paths:
+        stem = os.path.splitext(os.path.basename(chip_path))[0]
+        b08, transform, _crs = read_b08(chip_path)
+        base_mask = read_base_mask(
+            args.base_dir, stem, b08.shape, transform, all_polys_cache,
+        )
+
+        # 3. Run recovery on this chip
+        recovered = recover_tophat(
+            b08=b08,
+            base_mask=base_mask,
+            se_radius=args.se_radius,
+            th_thresh=args.th_thresh,
+            min_area_px=args.min_area_px,
+        )
+
+        recovered_polys = mask_to_polygons(recovered, transform,
+                                            source_file=os.path.basename(chip_path))
+
+        # 4. Merge with base polygons
+        base_gdf = read_base_polygons(args.base_dir, stem, all_polys_cache)
+        n_base = len(base_gdf) if base_gdf is not None else 0
+        n_recov = len(recovered_polys)
+
+        if base_gdf is not None and n_base > 0:
+            recov_gdf = gpd.GeoDataFrame(recovered_polys, crs=base_gdf.crs) if recovered_polys else None
+            merged = pd.concat([base_gdf, recov_gdf], ignore_index=True) if recov_gdf is not None else base_gdf
+        elif recovered_polys:
+            merged = gpd.GeoDataFrame(recovered_polys)
+        else:
+            merged = gpd.GeoDataFrame(columns=["class_id", "class_name", "area_m2",
+                                                "source_file", "iceberg_id", "geometry"])
+
+        # Re-id sequentially after the merge
+        if len(merged) > 0:
+            merged["iceberg_id"] = list(range(1, len(merged) + 1))
+
+        out_gpkg = os.path.join(args.out_dir, "gpkgs", f"{stem}_icebergs.gpkg")
+        if len(merged) > 0:
+            merged.to_file(out_gpkg, driver="GPKG")
+        all_polys.append(merged)
+
+        stats_rows.append({
+            "chip_stem":        stem,
+            "n_base_polygons":  n_base,
+            "n_recovered":      n_recov,
+            "n_total":          n_base + n_recov,
+        })
+
+    # 5. Concatenated gpkg + stats CSV
+    # Fisser synthetic chips have CRS = None, real Roboflow chips span UTM 24N
+    # and 25N, so a single CRS for the cross-chip concat does not exist. The
+    # eval script reads per-chip gpkgs, so the combined file is informational
+    # only; warn but continue if the concat fails.
+    try:
+        combined = pd.concat(all_polys, ignore_index=True) if all_polys else pd.DataFrame()
+        if len(combined) > 0:
+            combined.to_file(os.path.join(args.out_dir, "all_icebergs.gpkg"), driver="GPKG")
+    except Exception as exc:
+        print(f"WARN: cross-chip all_icebergs.gpkg skipped ({exc.__class__.__name__}: {exc})")
+
+    stats_path = os.path.join(args.out_dir, "recovery_stats.csv")
+    with open(stats_path, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f, fieldnames=["chip_stem", "n_base_polygons", "n_recovered", "n_total"]
+        )
+        writer.writeheader()
+        writer.writerows(stats_rows)
+
+    # 6. Method config (provenance)
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    cfg = {
+        "method":           f"{args.base_method_id}_TH",
+        "base_method":      args.base_method_id,
+        "base_dir":         os.path.abspath(args.base_dir),
+        "chips_dir":        os.path.abspath(args.chips_dir),
+        "se_radius":        args.se_radius,
+        "th_thresh":        args.th_thresh,
+        "min_area_px":      args.min_area_px,
+        "n_chips_processed": len(chip_paths),
+        "n_polygons_base":  int(sum(r["n_base_polygons"] for r in stats_rows)),
+        "n_polygons_recov": int(sum(r["n_recovered"] for r in stats_rows)),
+        "n_polygons_total": int(sum(r["n_total"] for r in stats_rows)),
+        "git_sha":          get_git_sha(repo_dir),
+        "created_utc":      datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    with open(os.path.join(args.out_dir, "method_config.json"), "w") as f:
+        json.dump(cfg, f, indent=2)
+
+    print(f"top-hat recovery written to {args.out_dir}/")
+    print(f"  base polygons:      {cfg['n_polygons_base']}")
+    print(f"  recovered polygons: {cfg['n_polygons_recov']}")
+    print(f"  total:              {cfg['n_polygons_total']}")
 
 
 if __name__ == "__main__":
