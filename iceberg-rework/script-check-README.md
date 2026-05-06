@@ -1,10 +1,10 @@
 # Classical iceberg-segmentation methods: code review pack
 
 Outlined below: The segmentation scripts I would like a second pair of eyes on. 
-Goal: confirm that the parameter choices, edge-case handling, and inter-method integration are scientifically defensible. 
-Scope: Unet++ training and the evaluation pipeline are not included here; only the per-chip segmentation logic.
 
-## Scripts under review
+Goal: confirm that the parameter choices, edge-case handling, and inter-method integration are scientifically defensible. 
+
+Scope: Unet++ training and the evaluation pipeline are not included here; only the per-chip segmentation logic.
 
 All scripts live in [`iceberg-rework/scripts/`](scripts/), the same directory the production pipeline runs from. The links below jump straight to the live source on GitHub. The full source of each is also pasted at the end of this README so you can read it inline without clicking through every file.
 
