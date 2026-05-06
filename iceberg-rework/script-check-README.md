@@ -44,7 +44,19 @@ The IC chip-rejection rule is from Fisser and others (2025), eq. 2: the original
 
 ## What I would like you to check
 
-We have done in-house verification on a number of parameters (Fisser-paper citation audit, IC cutoff sweep, polygonisation-artifact audit, 8- vs 4-connectivity polygonisation, Otsu floor distribution, raw vs log-B08 Otsu, IC test against fixed reference vs per-chip Otsu, IC / Otsu order of operations, UNet probability-threshold F1 sweep, flat-prob and prob-floor distributions). The pre-baked answers are stamped into the live scripts and summarised in `paper-writing/methods_draft.md` Section 2.14, with full per-chip CSVs and figures under `paper-writing/figure_review/script_check_answers/`. The questions below are what those checks could not settle, and where I would most value your eyes. A one-liner is enough where things look fine; the value of this review is catching the things I have not flagged.
+We have done in-house verification on a number of parameters (Fisser-paper citation audit, IC cutoff sweep, polygonisation-artifact audit, 8- vs 4-connectivity polygonisation, Otsu floor distribution, raw vs log-B08 Otsu, IC test against fixed reference vs per-chip Otsu, IC / Otsu order of operations, white top-hat SE radius (Q12), white top-hat response threshold (Q13), white top-hat base-mask rasterisation safety (Q14), UNet probability-threshold F1 sweep, flat-prob and prob-floor distributions, CRF iteration-count convergence (Q20)). The pre-baked answers are stamped into the live scripts and summarised in `paper-writing/methods_draft.md` Section 2.14, with full per-chip CSVs and figures under `paper-writing/figure_review/script_check_answers/`. Headline outcomes:
+
+| # | Decision |
+|---|---|
+| Q3 | Keep 8-connectivity; area metrics identical, count delta only +9% |
+| Q8 | Keep raw B08 Otsu; log shifts threshold by ~0.02, not qualitative |
+| Q9/Q10 | Keep per-chip Otsu IC; 41% disagree with fixed-reference IC, fundamentally different definitions |
+| Q12 | Keep `disk(10)`; larger discs trade fewer for larger candidates |
+| Q13 | Keep fixed `th_thresh = 0.05`; data-driven thresholds reduce recovery 29-60% |
+| Q14 | Rasterised-polygon path is safe (0/463 mismatches) |
+| Q20 | 5 CRF iterations is enough (0.04% pixel flips per step at 5 → 10) |
+
+The questions below are what those checks could not settle, and where I would most value your eyes. A one-liner is enough where things look fine; the value of this review is catching the things I have not flagged.
 
 ### `threshold_tifs.py` (TR)
 
