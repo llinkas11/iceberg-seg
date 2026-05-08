@@ -203,16 +203,16 @@ UNet_CRF cell per backbone x SZA bin (cross-bin pipeline candidate). Bold = back
 
 4-bin aggregate ranking by mean MAE:
 
-1. A5a (14.72) — A1 manifest + class balancing, aug=off (= A6a by collapse)
-2. A7b (14.75) — A1 manifest + size oversample, aug=on (= A8b == A9b)
-3. A1 (14.91) — A0 manifest + GT-zero chips
-4. A3 (15.25) — v4_clean + nulls
-5. A7a (15.60) — A1 manifest + size oversample, aug=off (= A8a == A9a)
-6. A2 (15.77) — v4_clean only
-7. A4 (17.12) — v4_clean + nulls + aug
-8. A7 (17.45) — v4_clean + nulls + aug + size oversample
-9. A0 (18.45) — Fisser raw, lt65 anchor
-10. A5 (19.48) — v4_clean + nulls + aug + class balance
+1. A5a (14.72) - A1 manifest + class balancing, aug=off (= A6a by collapse)
+2. A7b (14.75) - A1 manifest + size oversample, aug=on (= A8b == A9b)
+3. A1 (14.91) - A0 manifest + GT-zero chips
+4. A3 (15.25) - v4_clean + nulls
+5. A7a (15.60) - A1 manifest + size oversample, aug=off (= A8a == A9a)
+6. A2 (15.77) - v4_clean only
+7. A4 (17.12) - v4_clean + nulls + aug
+8. A7 (17.45) - v4_clean + nulls + aug + size oversample
+9. A0 (18.45) - Fisser raw, lt65 anchor
+10. A5 (19.48) - v4_clean + nulls + aug + class balance
 
 Surprise finding: A2 + UNet_CRF wins sza_70_75 (10.82 m) and sza_gt75 (16.66 m) on MAE outright, despite A2's known lt65 calibration collapse from PR-12. DenseCRF rescues A2's diffuse softmax at higher SZA. But A2's lt65 cell is a wreck (MAE 24.36 m, IoU 0.516), so A2 does NOT win the 4-bin aggregate. A1-anchored variants (A5a, A7a, A7b) cluster at the top because their training preprocessing (Fisser raw + GT-zero chips) preserves softmax sharpness on lt65 while size oversample / class balance lift higher-SZA generalisation.
 
