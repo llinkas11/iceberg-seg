@@ -182,6 +182,42 @@ A7b + UNet_CRF lifts higher-SZA IoU by +0.014 over A1 + UNet_CRF at the cost of 
 
 UNet_CRF_TH tracks UNet_CRF in lt65 / 65-70; degrades slightly in 70-75 / gt75. Top-hat does not improve on the UNet_CRF baseline for the cross-bin pipeline. A7b + UNet_CRF_TH cross-bin aggregate (IoU 0.613, MAE 19.80 m) underperforms A7b + UNet_CRF base (IoU 0.616, MAE 15.59 m): TH costs ~4 m MAE for no IoU gain. A7b's UNet_CRF cell is therefore the right cross-bin pick over its TH companion.
 
+## T3b - All 10 backbones, UNet_CRF cross-bin pipeline (added 2026-05-07)
+
+Phase B re-run for the seven distinct remaining backbones (Slurm 60337 + 60339, byte-identical collapse twins covered: A5 == A6, A7 == A8 == A9, A5a == A6a, A7a == A8a == A9a, A7b == A8b == A9b). With the original A0 / A1 / A7b plus the seven new runs, all 10 distinct Phase A backbones now have Phase B + TH coverage.
+
+UNet_CRF cell per backbone x SZA bin (cross-bin pipeline candidate). Bold = backbone winner per bin on MAE; the per-bin winner moves around (e.g. A0 wins lt65, A5a wins sza_65_70 MAE narrowly), but on the 4-bin aggregate A5a ties A7b for lowest MAE while A7b leads on IoU.
+
+| Backbone | sza_lt65         | sza_65_70        | sza_70_75        | sza_gt75         | 4-bin MAE | 4-bin IoU |
+|----------|------------------|------------------|------------------|------------------|-----------|-----------|
+| A0       | **0.619 / 11.93** | 0.609 / 17.64    | 0.597 / 17.06    | 0.552 / 27.16    | 18.45     | 0.594     |
+| A1       | 0.569 / 14.02    | 0.633 / 10.91    | 0.610 / 12.11    | 0.564 / 22.60    | 14.91     | 0.594     |
+| A2       | 0.516 / 24.36    | 0.613 / 11.25    | **0.622 / 10.82** | **0.583 / 16.66** | 15.77     | 0.584     |
+| A3       | 0.533 / 18.27    | 0.645 / 11.44    | 0.634 / 12.79    | 0.589 / 18.52    | 15.25     | 0.600     |
+| A4       | 0.530 / 18.39    | 0.628 / 15.73    | 0.650 / 13.64    | 0.583 / 20.72    | 17.12     | 0.598     |
+| A5       | 0.552 / 16.43    | 0.626 / 16.69    | 0.638 / 18.18    | 0.565 / 26.65    | 19.48     | 0.595     |
+| A7       | 0.539 / 18.14    | 0.626 / 13.56    | 0.634 / 15.28    | 0.569 / 22.80    | 17.45     | 0.592     |
+| **A5a**  | 0.583 / 13.67    | **0.648 / 11.05** | 0.619 / 13.25    | 0.575 / 20.90    | **14.72** | 0.606     |
+| A7a      | 0.591 / 13.43    | 0.642 / 11.71    | 0.613 / 13.65    | 0.561 / 23.62    | 15.60     | 0.602     |
+| **A7b**  | 0.589 / 12.24    | 0.645 / 11.80    | 0.623 / 12.50    | 0.581 / 22.47    | 14.75     | **0.609** |
+
+4-bin aggregate ranking by mean MAE:
+
+1. A5a (14.72) — A1 manifest + class balancing, aug=off (= A6a by collapse)
+2. A7b (14.75) — A1 manifest + size oversample, aug=on (= A8b == A9b)
+3. A1 (14.91) — A0 manifest + GT-zero chips
+4. A3 (15.25) — v4_clean + nulls
+5. A7a (15.60) — A1 manifest + size oversample, aug=off (= A8a == A9a)
+6. A2 (15.77) — v4_clean only
+7. A4 (17.12) — v4_clean + nulls + aug
+8. A7 (17.45) — v4_clean + nulls + aug + size oversample
+9. A0 (18.45) — Fisser raw, lt65 anchor
+10. A5 (19.48) — v4_clean + nulls + aug + class balance
+
+Surprise finding: A2 + UNet_CRF wins sza_70_75 (10.82 m) and sza_gt75 (16.66 m) on MAE outright, despite A2's known lt65 calibration collapse from PR-12. DenseCRF rescues A2's diffuse softmax at higher SZA. But A2's lt65 cell is a wreck (MAE 24.36 m, IoU 0.516), so A2 does NOT win the 4-bin aggregate. A1-anchored variants (A5a, A7a, A7b) cluster at the top because their training preprocessing (Fisser raw + GT-zero chips) preserves softmax sharpness on lt65 while size oversample / class balance lift higher-SZA generalisation.
+
+T4 cross-bin pick stays **A7b + UNet_CRF**: A5a is essentially tied on MAE (-0.03 m) but A7b leads on IoU (+0.003); within noise, prefer the higher-IoU pick because IoU is the primary spatial-quality metric and the user's framing ("we do better at higher SZA") is best served by the IoU lead.
+
 ## T4 - Recommended retrieval pipeline per SZA bin
 
 Combining T3 across both backbones and all twelve methods (six base + six top-hat), the best (backbone, method) per bin on root-length MAE:
@@ -320,5 +356,6 @@ TH is a UNet_OT booster at higher SZA: on all three backbones it drops UNet_OT M
 - A9b is the best per-bin IoU winner at sza_65_70 + sza_70_75 by a small margin over the size-oversample family. The A7b / A8b / A9b empirical collapse means any of the three can be chosen for downstream use; A7b is the leanest configuration (size oversample only, no class balancing on top).
 - T4 recommendation (revised 2026-05-06): lt65 -> A0 + UNet_OT (8.45 m); higher-SZA cross-bin -> **A7b + UNet_CRF** (mean higher-SZA IoU 0.616, mean MAE 15.59 m).
 - ~~Top-hat variants for the A7b backbone NOT run.~~ DONE 2026-05-06: Slurm 60328 (re_phase_b_tophat_a7b.slurm, partition=main, 10:11 wallclock). T3 _TH rows + T5 deltas now include A7b. Outcome: TH boosts A7b's UNet_OT at sza_65_70 (-10 m MAE) but hurts A7b's UNet_CRF cross-bin pipeline by +4 m MAE; recommendation stays A7b + UNet_CRF (base).
+- ~~Phase B + TH for the remaining Phase A backbones (A2-A7, A5a, A7a)~~ DONE 2026-05-06 / 2026-05-07: Slurm 60337 (Phase B, 48:40) + 60339 (TH, 1:13:36). T3b table added covering all 10 distinct backbones x UNet_CRF; 4-bin ranking confirms A5a essentially ties A7b on MAE (14.72 vs 14.75 m), A7b leads on IoU (0.609 vs 0.606). Cross-bin pick stays A7b + UNet_CRF. Surprise: A2 + UNet_CRF wins sza_70_75 + sza_gt75 MAE outright but loses lt65 by 12 m, so doesn't win 4-bin. **All 10 distinct Phase A backbones now have full Phase B + TH coverage; the rollout is complete.**
 - Higher-SZA TR n values are low (n=126 for sza_70_75); the backbone-independent finding is real but TR's coverage trade-off matters and should be flagged in the prose. Top-hat raises TR's recall to n=190 in that bin (TR_TH) but at a 4.5 m MAE cost.
 - Original Phase B headline (UNet_OT + A0) used a >100 m filter and a different chip subset; the 8.45 m here is on the full lt65 v4_clean split (no >100 m filter). Numbers are consistent in spirit, not identical by definition.

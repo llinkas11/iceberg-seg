@@ -55,7 +55,8 @@ Authoritative source for the dataset / backbone progression story: `shib_end_to_
 
 | File | Section | Status |
 |------|---------|--------|
-| `paper-writing/supplementary.md` | S1 Phase A 18-backbone leaderboard / backbone-comparison Phase B / top-hat effect | New, drafted from `shib_end_to_end/phase_a_higher_sza_t1_t4.md` (this file) |
+| `paper-writing/supplementary.md` | S1-S6 prose draft, all sections | Working Markdown draft |
+| `paper-writing/overleaf/git-mirror/supplementary.tex` | LaTeX skeleton mirroring supplementary.md, Tables S1-S5 + Figs S1-S3 | Compiles standalone; embeds figures from `figures/supplementary/` |
 | `tiny_icebergs_methods_addendum.md` | S2 (deferred branch) Tiny-iceberg annotation recovery | Scoped but not included in Phase B comparison |
 | `shib_end_to_end/phase_a_higher_sza_t1_t4.md` | Authoritative source for T1-T5 | Single source of truth |
 | `shib_end_to_end/phase_a_cleanup_audit.md` | Phase A lt65 audit (C1/C2 ablation) | Background, supplementary |
@@ -69,6 +70,8 @@ Authoritative source for the dataset / backbone progression story: `shib_end_to_
 | `figS01_otsu_floor_distribution` | Per-chip Otsu floor distribution, 23,981 chips | `iceberg-rework/scripts/script_check_answers/q07_otsu_floor_distribution.py` |
 | `figs02_phase_a_heatmap` | Phase A per-SZA-bin x 18-experiment IoU + MAE heatmap | `iceberg-rework/scripts/make_figS02_phase_a_heatmap.py` |
 | `figs03_a0_vs_a1_by_sza` | Backbone comparison A0 vs A1 vs A7b paired bars | `iceberg-rework/scripts/make_figS03_a0_vs_a1_by_sza.py` |
+
+Clean-named copies of the latest PNG of each supplementary figure live under `paper-writing/figures/supplementary/` and are mirrored into `paper-writing/overleaf/git-mirror/figures/supplementary/` for LaTeX compilation. The full timestamped archive remains in `figures/fig-archive/`.
 
 Index of record: same `figures/figures.md` "Supplemental figures" section. The supplementary slug convention is lowercase `figs<N>` (registry constraint) but in-paper labelling is `Figure S<N>` per IGS style.
 
