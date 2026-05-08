@@ -73,7 +73,7 @@ A7b sweeps the three higher-SZA bins on both metrics. A7a (the aug=off sibling) 
 
 Interpretation: A1 (Fisser preprocessing + 29 GT-zero chips) was the first finding. Adding size oversample with augmentation on top (A7b) yields a further 0.8 m MAE reduction at higher SZA and improves IoU consistently. The size-oversample-with-aug pairing is mechanistic: replicated chips get distinct geometric views per epoch, so the gradient sees more distinct instances of the rare bin without memorisation. The aug=off siblings A7a/A8a/A9a still beat A1 (mean MAE 28.53 m) and even nearly match A7b at lt65, confirming the size-oversample axis carries most of the lift; aug adds a final refinement at higher SZA.
 
-The earlier "A1 + UNet_CRF" recommendation in T4 was based on the pre-2026-05-05-evening data; if Phase B is re-run with A7b (not done yet), the pipeline recommendation will likely shift to A7b + UNet_CRF or A7b + UNet_OT. Pending follow-up.
+The earlier "A1 + UNet_CRF" recommendation in T4 was based on the pre-2026-05-05-evening data. Phase B re-run with A7b (Slurm 60323) completed 2026-05-06 and shifted the cross-bin pick to **A7b + UNet_CRF** (see T4). The full 10-backbone UNet_CRF comparison (Slurm 60337 + 60339, completed 2026-05-07) is in T3b below.
 
 ## T3 - Phase B backbone comparison (A0 vs A1, twelve methods, all SZA bins)
 
