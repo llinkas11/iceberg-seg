@@ -318,3 +318,16 @@ The gap between our $-$21.4\% and Fisser's $\pm$5.7\% cannot be closed by removi
 \item On the Fisser-comparable $>$100 m subset, UNet\_OT achieves $+$4.9\% mean relative area error, within Fisser's published range of $\pm$5.7\% for TR under manual curation. Our automated TR achieves $-$33.2\% on the same subset due to the IC chip-skip filter and automated (rather than manual) scene selection.
 \item TR's automated performance gap ($-$33\% vs Fisser's $\pm$5.7\%) is structural: 68\% of lt65 test chips fail the IC filter because Fisser chips are iceberg-dense. This is not a calibration error; it reflects the fundamental difficulty of the automated pipeline.
 \end{enumerate}
+
+## 3.9 Higher-SZA generalisation and backbone re-eval (added 2026-05-05)
+
+The original Phase B (Section 3.6) was lt65-only because Phase A itself was lt65-scoped. Three follow-up Slurm runs (60293, 60296, 60297) extend the comparison to all four SZA bins on the unifying v4\_clean test split (228 chips, 57 per bin). Full T1-T4 tables in `phase_a_higher_sza_t1_t4.md`; this section is a brief pointer rather than a full transcription, in line with the direction to keep the dataset/backbone story in supplementary material.
+
+Headline:
+\begin{enumerate}
+\item Eighteen Phase A backbones evaluated on v4\_clean across all four SZA bins (UNet only): the original ten (A0..A9) plus eight A1-anchored variants (A5a..A9a aug=off, A7b..A9b aug=on, all on v4\_raw\_lt65\_plus\_nulls). The 2026-05-05-evening winner shifted from A1 to **A7b** (= A8b == A9b by collapse; A1 manifest + size oversample + augmentation) at higher SZA: A7b mean per-pair MAE 27.24 m and IoU 0.531 vs A1's 28.01 m / 0.499 and A0's 33.33 m / 0.490. A0 still wins lt65. The 5 aug=off A1-anchored variants (A5a == A6a, A7a == A8a == A9a) all beat A1 at higher SZA but trail A7b; the size-oversample axis carries most of the lift, augmentation adds the final refinement.
+\item Re-running the twelve-method Phase B sweep (six base + six top-hat companions) with three backbones (A0, A1, A7b) on v4\_clean shows the cross-bin pipeline pick shifted from A1 + UNet\_CRF to **A7b + UNet\_CRF**: higher-SZA mean IoU 0.616 vs 0.602 at tied MAE (15.59 m vs 15.21 m); A7b wins sza\_gt75 outright on both metrics. lt65 still favours A0 + UNet\_OT at 8.45 m (reproducing the published 8.18 m headline within rounding on the v4\_clean lt65 split). Top-hat lifts UNet\_OT recall in higher SZA bins but degrades UNet\_CRF cross-bin, so A7b + UNet\_CRF base (no TH) is the cleanest recommendation.
+\item The recommended single-backbone-single-method pipeline across all four SZA bins is A1 + UNet\_CRF (n high in higher bins, IoU consistently above 0.55, MAE 14.0 / 10.9 / 12.1 / 22.6 m for lt65 / 65--70 / 70--75 / $>$75). The per-bin best combination is A0 + UNet\_OT for lt65 and A1 + UNet\_CRF for the higher bins.
+\item Top-hat variants (six TH companions to the six base methods) were NOT included in the Phase B re-runs and remain a coverage gap. One additional Slurm sweep with `--with_tophat` would close it.
+\item Phase A and the backbone comparison are intended for the supplementary material (T1 + T2 as supplementary figures); the main text focuses on the headline that the learned pipeline beats Fisser's threshold baseline at higher SZA.
+\end{enumerate}

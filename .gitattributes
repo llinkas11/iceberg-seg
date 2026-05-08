@@ -1,0 +1,8 @@
+# Git LFS rules for the iceberg-seg archive.
+# Only files cited directly in the paper are LFS-tracked. Bulk data
+# (chips, predictions, run outputs) lives in GitHub Releases as tarballs.
+
+*.pth      filter=lfs diff=lfs merge=lfs -text
+*.onnx     filter=lfs diff=lfs merge=lfs -text
+*.onnx.data filter=lfs diff=lfs merge=lfs -text
+*.gpkg     filter=lfs diff=lfs merge=lfs -text

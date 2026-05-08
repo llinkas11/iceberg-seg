@@ -1,0 +1,2 @@
+method,n_gt_total,n_pred_total,n_matched,match_rate,precision
+UNet,8468,7006,2648,0.3127,0.378

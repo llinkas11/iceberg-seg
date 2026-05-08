@@ -43,8 +43,9 @@ THRESHOLD   = 0.22   # Fisser 2024 B08 NIR reflectance threshold (0.12) + 0.10 D
                      # chip_sentinel2.py does not subtract this offset, so reflectances are +0.1 high
                      # 0.22 here = 0.12 in Fisser's corrected reflectance space
 MIN_AREA_M2 = 100    # minimum polygon area in m2 (~10x10 m)
-IC_THRESHOLD = 0.15  # Fisser 2025 IC block filter: skip chip if >15% of pixels exceed NIR threshold
+IC_THRESHOLD = 0.15  # Fisser 2025 IC block filter (eq. 2): skip chip if >15% of pixels exceed NIR threshold
                      # Flags chips dominated by sea ice rather than open water with icebergs
+                     # Original Fisser 2025 rule: 10 km block; we apply at 2.56 km chip level (pre-tiled chips)
 
 
 def apply_threshold(chips_dir, out_dir, b08_idx=2, threshold=THRESHOLD, min_area_m2=MIN_AREA_M2, ic_threshold=IC_THRESHOLD):

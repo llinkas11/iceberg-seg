@@ -1,0 +1,33 @@
+# exp_baseline_v1_raw: baseline_v1 retrained on the v4_raw manifest.
+#
+# Companion run to exp_baseline_v1. Same architecture, same split policy, same
+# methods + metrics; only the manifest changes (v4_clean -> v4_raw, i.e. drop
+# the 40 m component filter and the IC pixel mask across all four SZA bins).
+# Together with the canonical baseline this yields the parallel paper table
+# whose delta is read directly as the preprocessing-pipeline impact.
+
+id: exp_baseline_v1_raw
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id: v4_raw
+
+controlled_variable: data
+
+progression:
+  phase: baseline
+  step: baseline_v1_raw
+  compared_to: exp_baseline_v1
+
+notes: |
+  v4_raw has 984 chips (vs v4_clean's 916) and contains the 68 IC-blocked
+  Fisser chips that v4_clean drops. Both filters (40 m component cutoff,
+  IC pixel mask) are off across all bins. Val + test stay matched-distribution
+  to v4_clean only in SZA-bin counts; chip identities differ because the split
+  is redrawn by seed=42 over the larger pool.
+
+  Comparison with exp_baseline_v1 should be reported per-(method, sza_bin)
+  using per-pair MAE / IoU on the v4_raw test chips. The chip-level table
+  uses each manifest's own test chips; cross-comparison is by aggregate
+  statistics, not paired chips.

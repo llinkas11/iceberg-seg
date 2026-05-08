@@ -381,9 +381,23 @@ def main():
         parser.error("--test_dir is required unless --pred_dir is set")
 
     methods = [m.strip() for m in args.methods.split(",") if m.strip()]
-    unknown = [m for m in methods if m not in METHODS]
+    # Method names are directory labels under test_dir/<bin>/<method>/. Accept
+    # any name whose stripped suffix matches a known canonical method, so that
+    # post-processed variants like UNet_TH or UNet_CRF_TH can be evaluated
+    # without changing the canonical METHODS list.
+    KNOWN_SUFFIXES = ("_TH",)
+    unknown = []
+    for m in methods:
+        if m in METHODS:
+            continue
+        canonical = m
+        for suf in KNOWN_SUFFIXES:
+            if canonical.endswith(suf):
+                canonical = canonical[: -len(suf)]
+        if canonical not in METHODS:
+            unknown.append(m)
     if unknown:
-        parser.error(f"unknown method(s): {unknown}; known: {METHODS}")
+        parser.error(f"unknown method(s): {unknown}; known base methods: {METHODS}")
 
     all_pair_rows = []
     all_chip_rows = []

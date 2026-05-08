@@ -13,7 +13,12 @@
 #   UNet_CRF  UNet++ + DenseCRF
 #
 # Usage:
-#   bash run_methods.sh --manifest <path> --checkpoint <path> --out_base <path> [--bin <sza_bin>]
+#   bash run_methods.sh --manifest <path> --checkpoint <path> --out_base <path> [--bin <sza_bin>] [--with_tophat]
+#
+# When --with_tophat is set, each base method's output is post-processed by
+# scripts/tophat_recover.py, producing companion <METHOD>_TH/ directories
+# containing the union of base + TH-recovered polygons. Twelve method outputs
+# total (6 base + 6 TH).
 #
 # Example:
 #   bash run_methods.sh \
@@ -36,6 +41,7 @@ MANIFEST=""
 CHECKPOINT=""
 OUT_BASE=""
 BIN=""
+WITH_TOPHAT=0
 PROB_THRESHOLD=""   # forwarded to threshold_probs.py; if empty, script default applies
 
 while [[ $# -gt 0 ]]; do
@@ -44,6 +50,7 @@ while [[ $# -gt 0 ]]; do
         --checkpoint)      CHECKPOINT="$2";      shift 2 ;;
         --out_base)        OUT_BASE="$2";        shift 2 ;;
         --bin)             BIN="$2";             shift 2 ;;
+        --with_tophat)     WITH_TOPHAT=1;        shift 1 ;;
         --prob_threshold)  PROB_THRESHOLD="$2";  shift 2 ;;
         -h|--help)
             sed -n '2,30p' "$0"
@@ -182,6 +189,18 @@ for B in "${BINS[@]}"; do
         --probs_dir "$PROBS" \
         --chips_dir "$CHIPS" \
         --out_dir   "$OUT/UNet_CRF"
+
+    if [[ "$WITH_TOPHAT" == "1" ]]; then
+        echo ""
+        echo "--- $B  top-hat recovery (6 methods) ---"
+        for M in TR OT UNet UNet_TR UNet_OT UNet_CRF; do
+            "$PY" "$SCRIPTS/tophat_recover.py" \
+                --chips_dir       "$CHIPS" \
+                --base_dir        "$OUT/$M" \
+                --out_dir         "$OUT/${M}_TH" \
+                --base_method_id  "$M"
+        done
+    fi
 done
 
 echo ""

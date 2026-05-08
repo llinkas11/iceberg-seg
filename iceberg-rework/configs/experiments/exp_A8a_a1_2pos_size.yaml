@@ -1,0 +1,28 @@
+# A8a: A5a + size oversample (scheme_K = D + J), aug=off.
+#
+# Composes fixed-positive class balancing (A5a) with size oversample (A7a)
+# on the A1 manifest. Same memorisation caveat as A7a: aug=off + oversample
+# is the weak combination; A8b is the fair test.
+
+id: exp_A8a_a1_2pos_size
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      v4_raw_lt65_plus_nulls
+    balancing_scheme: scheme_K_two_pos_per_null_size_balanced
+  augmentation:
+    enabled: false
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A8a
+  compared_to: exp_A1_fisser_lt65_plus_nulls
+
+notes: |
+  Composition test: D + J on A1. Marginal lift over A5a (no size step) and
+  over A7a (no class step) reads off the additivity of the two balancing
+  axes on the A1 backbone. Likely collapses to A7a / A9a if the GT+ majority
+  swamps the size step.

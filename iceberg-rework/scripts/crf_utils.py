@@ -1,3 +1,20 @@
+"""
+crf_utils.py: DenseCRF helpers used by densecrf_tifs.py and the earlier
+phase1/phase2 sandbox sweeps.
+
+apply_densecrf() is the only entry point used in the production pipeline.
+It takes a (C, H, W) softmax probability stack plus the chip's (C, H, W)
+reflectance image and returns a (H, W) hard label map after running
+DenseCRF mean-field inference with a gaussian (location-only) and a
+bilateral (location + reflectance) pairwise term.
+
+The remaining helpers in this file are sandbox scaffolding: synthetic
+probability generation from labels, IoU and area-bias diagnostics, and a
+small CLI param-grid builder used by the offline tuning sweep. They are
+left here so the file is self-contained and the sandbox scripts in
+_archive/old-experiments/test-crf still import from one location.
+"""
+
 import argparse
 import itertools
 import json

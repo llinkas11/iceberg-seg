@@ -5,12 +5,24 @@ LaTeX. This file is the prose layer; the v4_clean pipeline, manifest schema,
 and progression-driven experimental design live in the code at
 `/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/`.
 
-Last updated: 2026-04-27 (v4_clean dataset, binary segmentation, six-method
+Last updated: 2026-04-30 (v4_clean dataset, binary segmentation, six-method
 sweep, Hungarian per-pair evaluator, Fisser-comparable RE, oversample-only
-size balancing for the Phase A 2x3 grid).
+size balancing for the Phase A 2x3 grid, plus explicit scope notes for
+methodological branches introduced in planning but not executed).
 -->
 
 # Methods
+
+## 2.0 Methodological Branches and Scope
+
+The methodology contains one executed comparison path and several scoped branches. The executed path is the dataset and method progression reported in this paper: `v4_clean` data construction, UNet++ training, six inference methods (TR, OT, UNet++, UNet_TR, UNet_OT, UNet_CRF), and chip-level plus per-iceberg evaluation. All headline tables and figures come from this path unless explicitly labelled otherwise.
+
+Several planning branches were investigated or specified but are not part of the executed comparison. They are documented here before the main pipeline to prevent them from being confused with reported results:
+
+- **Tiny-iceberg annotation recovery**: fixed-threshold and Otsu candidate-generation workflows were developed for visual review of missed small icebergs, excluding overlap with existing annotations and suppressing broad bright regions. These candidates have not been merged into the training labels, and no retrained model in this paper uses them.
+- **White top-hat post-processing**: a morphological white top-hat recovery step was specified as a possible `+TH` companion to each of the six base methods. The branch is treated as a sensitivity path for small-iceberg recovery, not as a headline method in the current six-method comparison.
+- **Meteorological filtering**: wind speed and air temperature from CARRA were identified as possible confounders for scene selection. No wind-speed or temperature exclusion is applied in the reported dataset; these variables are retained as contextual metadata and possible future stratification axes.
+- **CatBoost, contrast-based modelling, and dynamic thresholding**: these were listed as candidate method branches in the planning notes. They are deferred and have no trained model, inference outputs, or evaluation tables in the current paper.
 
 ## 2.1 Study Regions and Imagery
 
@@ -40,7 +52,7 @@ The combined dataset is `v4_clean`, materialised at `data/v4_clean/manifest.json
 
 Two annotation sources contribute:
 
-1. Fisser and others (2024) pickled masks: 398 chips at SZA < 65 from Kangerlussuaq Fjord, with three-class polygon annotations (ocean, iceberg, shadow). Shadow is merged into iceberg before any analysis (see Section 2.6). 330 of these chips survive the 40 m + IC filters.
+1. Fisser and others (2025) pickled masks: 398 chips at SZA < 65 from Kangerlussuaq Fjord, with three-class polygon annotations (ocean, iceberg, shadow). Shadow is merged into iceberg before any analysis (see Section 2.6). 330 of these chips survive the 40 m + IC filters.
 2. Roboflow-annotated chips: 586 chips at SZA > 65 across both fjords, with single-class iceberg annotations using the SAM3 smart-select tool followed by manual correction. All 586 contribute to v4_clean.
 
 Splits in v4_clean target 65 / 15 / 25 train/val/test. The effective split is 551 / 137 / 228 because the test set is capped at 57 chips per SZA bin (228 = 57 x 4) for cross-bin metric balance. Within v4_clean training, 193 chips received annotation-aware IC masking. The class distribution is binary: ocean 94.4 % / iceberg 5.6 % at the pixel level.
@@ -58,6 +70,10 @@ Training uses a composite Dice + BCE loss, with the BCE positive weight set to t
 Augmentation is on by default in baseline_v1: random horizontal flip, random vertical flip, and random 90 degree rotation. Augmentation is the single variable that flips between the two adjacent rows of the dataset progression (see Section 2.13); aug-on and aug-off variants run on byte-identical chip sets so the lift can be isolated.
 
 Training is launched via `slurm/baseline_v1.slurm` under the environment variable `ICEBERG_EXPERIMENT=1`. Under that flag the training script refuses to run without an explicit `--seed`, so every published checkpoint is reproducible. The seed (default 42) propagates to Python, NumPy, Torch CPU and CUDA, and the cuDNN deterministic flag.
+
+### Backbone selection across SZA bins
+
+Phase A (Section 2.13) trained ten backbones on `sza_lt65` chips alone. The 2026-05-05 follow-up evaluates each backbone against the unifying `v4_clean` test split for all four SZA bins, then trains 8 additional A1-anchored variants that re-anchor the class- and size-balancing schemes onto A1's manifest (`v4_raw_lt65_plus_nulls`) rather than A4's (`v4_clean_lt65_plus_nulls`). Full tables (T1, T1b, T2 revised, T3, T4, T5) live in `shib_end_to_end/phase_a_higher_sza_t1_t4.md`. A0 (Fisser preprocessing, no GT-zero chips) wins `sza_lt65` cleanly (per-pair IoU 0.710, root-length MAE 10.99 m), but loses every higher-SZA bin to the A1-anchored variants. The new winner across all 18 backbones on higher-SZA generalisation is **A7b** (= A8b == A9b by collapse; A1 manifest plus size oversample plus augmentation): mean per-pair MAE 27.24 m and IoU 0.531 across the three higher-SZA bins, beating A1's 28.01 m / 0.499 and A0's 33.33 m / 0.490. A7b also beats A1 at lt65 (15.90 m vs 17.74 m). Re-running the twelve-method Phase B sweep (Section 2.7-2.10, six base + six top-hat companions) with three backbones (A0, A1, A7b) shows that **A7b + UNet_CRF** is the strongest learned cross-bin pipeline: it beats A1 + UNet_CRF on per-pair IoU in every higher-SZA bin (mean 0.616 vs 0.602) at essentially tied MAE (mean 15.59 m vs 15.21 m). Top-hat lifts UNet_OT recall substantially in higher SZA bins but degrades UNet_CRF cross-bin performance, so A7b + UNet_CRF (no top-hat) is the cleanest single-pipeline recommendation. The paper's headline (A0 + UNet_OT, lt65, 8.45 m) survives.
 
 ## 2.7 Fixed NIR Threshold (TR)
 
@@ -81,13 +97,31 @@ All three methods share the same UNet++ checkpoint and the same softmax probabil
 
 ## 2.10 White Top-Hat Filtering for Small-Iceberg Recovery (deferred)
 
-A morphological white top-hat post-processing step was scoped for small-iceberg recovery but is not in the current six-method comparison. When implemented, the white top-hat will be applied to every method's output as a "+TH" variant. See `tiny_icebergs_methods_addendum.md` for the specification.
+A morphological white top-hat post-processing step was scoped for small-iceberg recovery but is not in the current six-method comparison. The intended branch applies a disk-structured white top-hat filter to the B08 band, thresholds the response, removes components below the 40 m root-length cutoff, subtracts pixels already covered by a base method, and writes a merged base-plus-recovered `+TH` output for each base method. See `tiny_icebergs_methods_addendum.md` for the annotation-review context; any `+TH` results must be reported separately from the six headline methods.
 
 ## 2.11 Evaluation
 
 Predictions for every method are stored as GeoPackages with one polygon per detected iceberg, carrying `area_m2`, `class_name`, and `source_file`. Evaluation rasterises these polygons back to pixel masks using the chip's own affine transform and runs two parallel pipelines.
 
 **Pixel-level metrics (`scripts/eval_methods.py`)**: per chip, computes IoU, precision, recall, F1, predicted area in m$^2$, ground-truth area in m$^2$, absolute area error, and squared area error against the iceberg-class mask. Aggregations by (method, sza_bin) report mean IoU / precision / recall / F1, area MAE (mean absolute area error in m$^2$), area MSE, chip count, and skip count. Aggregations also break out a GT-positive-only view, which excludes chips with zero ground-truth iceberg pixels.
+
+For a predicted binary mask $P$ and reference mask $R$, chip-level IoU is:
+
+$$\mathrm{IoU} = \frac{|P \cap R|}{|P \cup R|} = \frac{TP}{TP + FP + FN}$$
+
+For chip $i$, predicted and reference iceberg area are:
+
+$$A_{\mathrm{pred},i} = n_{\mathrm{pred},i} \cdot r^2,\quad A_{\mathrm{ref},i} = n_{\mathrm{ref},i} \cdot r^2$$
+
+where $r = 10$ m is the Sentinel-2 pixel size. Area error for chip $i$ is:
+
+$$e_i = A_{\mathrm{pred},i} - A_{\mathrm{ref},i}$$
+
+For a reporting group with $N$ evaluated chips:
+
+$$\mathrm{MAE}_{area} = \frac{1}{N}\sum_{i=1}^{N}|e_i|$$
+
+$$\mathrm{MSE}_{area} = \frac{1}{N}\sum_{i=1}^{N}e_i^2$$
 
 **Per-pair metrics (`scripts/eval_per_iceberg.py`)**: per chip, ground-truth and predicted masks are decomposed into connected components. Pairwise IoU between every GT and predicted component is computed, with a bounding-box prefilter that skips disjoint pairs without touching pixel data. Pairs are matched by Hungarian assignment on cost `1 - IoU` (`scipy.optimize.linear_sum_assignment`); pairs with IoU < 0.3 are dropped as unmatched. This is described in detail in Section 2.12.
 
@@ -117,7 +151,15 @@ $$\mathrm{AE}_\mathrm{root} = |\sqrt{A_\mathrm{S2}} - \sqrt{A_\mathrm{ref}}| \qu
 
 $$\mathrm{IoU} = \frac{|P \cap R|}{|P \cup R|}$$
 
-Positive RE indicates Sentinel-2 overestimation. Per-bin Mean Absolute Error (MAE) is the mean of $\mathrm{AE}_\mathrm{area}$ or $\mathrm{AE}_\mathrm{root}$ over matched pairs. Root-length MAE is preferred for cross-size comparison because it does not amplify with the square of iceberg linear scale.
+Positive RE indicates Sentinel-2 overestimation. Per-bin Mean Absolute Error (MAE) is the mean of $\mathrm{AE}_\mathrm{area}$ or $\mathrm{AE}_\mathrm{root}$ over matched pairs. For $M$ matched iceberg pairs:
+
+$$\mathrm{MAE}_{area} = \frac{1}{M}\sum_{j=1}^{M}|A_{\mathrm{S2},j} - A_{\mathrm{ref},j}|$$
+
+$$\mathrm{MAE}_{root} = \frac{1}{M}\sum_{j=1}^{M}|\sqrt{A_{\mathrm{S2},j}} - \sqrt{A_{\mathrm{ref},j}}|$$
+
+$$\mathrm{MSE}_{area} = \frac{1}{M}\sum_{j=1}^{M}(A_{\mathrm{S2},j} - A_{\mathrm{ref},j})^2$$
+
+Root-length MAE is preferred for cross-size comparison because it does not amplify with the square of iceberg linear scale.
 
 ### Matching
 
@@ -176,6 +218,8 @@ Two preprocessing operations distinguish our pipeline from Fisser's published re
 
 Because both operations substantially edit Fisser's data, the experimental design treats preprocessing as a controlled variable rather than a fixed setting. A0 and A1 anchor on `v4_raw_lt65` (398 lt65 Fisser chips, no filter, no mask, no IC chip-drop), preserving Fisser's published cleaning. A2 through A9 anchor on `v4_clean_lt65` (330 chips with our 40 m + IC pipeline applied). The A0 to A2 contrast isolates the preprocessing pipeline. To support a robustness check across all SZA bins, a parallel `v4_raw` manifest (984 chips, no filters, all bins) backs a companion baseline run that reports the same per-pair MAE / IoU / detection tables as `v4_clean`. The paper presents both tables; the delta is read directly as the preprocessing-pipeline impact.
 
+This contrast also defines the broader dataset-philosophy axis in the study: an idealized iceberg-only retrieval setting versus a realistic fjord-scene setting that retains sea ice, melange, and ambiguous bright background.
+
 ### 2.13.4 Phase A 2x3 grid
 
 A4-A9 form a 2x3 grid:
@@ -186,7 +230,9 @@ A4-A9 form a 2x3 grid:
 | Class: fixed pos | A5                | A8                            |
 | Class: adaptive  | A6                | A9                            |
 
-Each row reads "same as the column-1 cell, but with size oversampling added." The grid lets the paper read off the marginal lift of each balancing axis when the other axis is held fixed. Pairs to look at are A4-A5-A6 (class on a fixed dataset), A4-A7 (size on natural class distribution), A5-A8, A6-A9 (size on top of class).
+Each row reads "same as the column-1 cell, but with size oversampling added." The grid is designed to read off the marginal lift of each balancing axis when the other axis is held fixed. Pairs to look at are A4-A5-A6 (class on a fixed dataset), A4-A7 (size on natural class distribution), A5-A8, A6-A9 (size on top of class).
+
+This grid is a design structure, not a guarantee that all six cells remain empirically distinct. On `v4_clean_lt65_plus_nulls`, GT-positive chips are the natural majority, so scheme_D and scheme_I produce identical class-balanced training sets. Under the 4x oversampling cap, schemes J, K, and L also converge to the same size-balanced training set. The resulting Phase A comparison therefore reads as three realized training conditions: A4, A5/A6, and A7/A8/A9.
 
 ### 2.13.5 Reporting metrics on the run
 
@@ -199,3 +245,72 @@ Every experiment run produces three CSV families:
 The per-pair table is the headline for Fisser comparability. The chip-level table is the segmentation-community-standard companion. Detection stats are required context for any cross-method MAE claim.
 
 The headline tables are reported on `v4_clean` (canonical baseline). A parallel run on `v4_raw` (no 40 m filter, no IC mask, all SZA bins) produces the same three CSV families. The delta between the two table sets, reported under matched (method, sza_bin) pairs, attributes performance differences to the preprocessing pipeline alone.
+
+## 2.14 Parameter sensitivity checks (script-check pack)
+
+Five per-script parameter choices in the segmentation pipeline have been audited against the data they apply to so the chosen values are not just inherited from Fisser and others (2024) but are defensible on this dataset. Each check generates a per-chip CSV plus a one- or two-PNG figure under `paper-writing/figure_review/script_check_answers/<slug>/`; the source scripts live under `iceberg-rework/scripts/script_check_answers/`. The findings reported here are referenced from the relevant method sections above.
+
+**Q1: IC chip-rejection cutoff (TR, TR_NDWI, OT, UNet_OT)** ([q01_ic_cutoff_sweep](figure_review/script_check_answers/q01_ic_cutoff_sweep/)). The 15 % cutoff used by Sections 2.4, 2.7, 2.8, and 2.9 was swept at {10, 15, 20, 25, 30} % across 23,981 chips spanning all four SZA bins in both fjords. At the production 0.15 cutoff, 41 % of chips would be skipped overall; per-(region, SZA bin) skip-rate ranges from 27 % (KQ sza_70_75) to 79 % (SK sza_70_75). The ECDF is bimodal: a steep climb to ECDF ~ 0.55 at ic_frac near zero (open-water chips) and a slow rise past 0.6 (sea-ice or land-edge chips). The 0.15 cutoff sits inside the slow middle of the distribution, so moving it to 0.20 or 0.30 only buys a few additional percent of retained chips and the SK-vs-KQ asymmetry persists at every cutoff. Sea-ice exposure dominates the skip-rate gap, not SZA per se. Decision: keep 15 % from Fisser and others (2024); the choice is not a tuning knob with material headroom on our population.
+
+**Q2: Polygonisation artifacts in TR** ([q02_polygonisation_artifacts](figure_review/script_check_answers/q02_polygonisation_artifacts/)). The threshold_tifs.py path runs `rasterio.features.shapes` on the raw `B08 >= 0.22` mask with no morphological cleanup before vectorisation, so a reviewer could reasonably worry that salt-and-pepper pixels inflate the polygon count. Across the 14,109 chips that pass the IC filter, 30.5 % of pre-cutoff polygons are 1-pixel and 46.7 % are 2-pixel; because each pixel is 100 m^2, the production `area >= 100 m^2` cutoff keeps every polygon and is therefore not effectively filtering single-pixel artifacts. Running a single iteration of `binary_opening` (disk(1)) before vectorisation drops 71.9 % of the kept polygons (from 476,187 to 133,568) and 13.6 % of total area (from 1078.95 km^2 to 931.76 km^2), with the area loss concentrated in chips whose iceberg edges are 1-pixel-thick. Decision: keep the no-cleanup path so total area is conservative against erosion, but add a methods footnote that the polygon count is dominated by 1-pixel and 2-pixel components and should not be reported as a per-iceberg count without an additional `min_area_px` filter or morphological pre-processing.
+
+**Q7: Otsu floor for the OT method** ([q07_otsu_floor_distribution](figure_review/script_check_answers/q07_otsu_floor_distribution/)). The `min_otsu_thresh = 0.10` floor in Section 2.8 was probed against per-chip Otsu on B08 over the same 23,981-chip set. At the production 0.10 floor 6.1 % of chips skip; raising to 0.15 jumps to 41.0 % and the offset-corrected equivalent 0.20 hits 50.5 %. The histogram has a sharp spike just past 0.10 (Otsu locking onto the open-water noise floor) and a long tail past 0.5 driven by sea-ice or land-edge chips. Moving the floor to 0.20 would discard about half the population, including chips whose Otsu correctly separates icebergs from a moderately bright background. Decision: keep 0.10 in offset-uncorrected reflectance.
+
+**Q15: UNet+TR probability cutoff** ([q15_unet_threshold_f1](figure_review/script_check_answers/q15_unet_threshold_f1/)). The 0.22 cutoff applied to `P(iceberg)` in Section 2.9 was inherited from the Fisser reflectance threshold deliberately so `UNet_TR` and `TR` share a numerically identical knob in different spaces. A pixel-level F1 / IoU / precision / recall sweep was run on the v4_clean **test** split (val predictions are not yet emitted by the model_comparison run; 171 of 228 test chips matched between manifest and the `model_comparison_20260423_stage1_vs_baseline` probs). F1 climbs slowly from 0.40 at τ = 0.05 to argmax 0.528 at τ = 0.90; production τ = 0.22 gives F1 = 0.464 (Δ to argmax = +0.064). This is a test-set sensitivity check, not a calibration recommendation: tuning τ on the held-out set would be informal calibration. The signal that argmax-F1 sits at very high τ on test is consistent with a confident model whose `P(iceberg)` distribution is well separated; a defensible threshold pick must wait until val probs are emitted and Q15 is re-run with `--split val`.
+
+**Q16: Flat-prob skip in UNet_OT** ([q16_flat_prob_distribution](figure_review/script_check_answers/q16_flat_prob_distribution/)). The `range_p = max(P) - min(P) < 0.01` skip in `otsu_probs.py` (Section 2.9) was tested against the per-chip range distribution on the 171 test chips. Would-skip rate is 0 % at every candidate cutoff in {0.005, 0.01, 0.02, 0.05}: every chip's range exceeds 0.01 by a wide margin. The 0.01 floor is non-binding on this population, so the guard functions as a safety net for degenerate inputs rather than a tuning knob. Decision: keep 0.01.
+
+**Q17: Per-chip Otsu floor on probability (UNet_OT)** ([q17_otsu_on_prob_floor](figure_review/script_check_answers/q17_otsu_on_prob_floor/)). The proposed companion floor of 0.5 on `Otsu(P(iceberg))` (mirroring the 0.10 floor on B08-Otsu) was checked against the per-chip Otsu distribution on the same 171 test chips. 52 % of chips have Otsu < 0.3 and 100 % have Otsu < 0.5: a 0.5 floor would activate on every chip and remove 22.5 % of total iceberg pixels; a 0.3 floor would activate on 52 % and remove 19.0 %. Per-chip Otsu sits well below 0.5 across the population, so the proposed 0.5 floor is too aggressive. Decision: do not introduce a 0.5 floor; if a floor is wanted later, 0.3 buys most of the protection without erasing the half of chips whose Otsu is correctly low.
+
+**Q3: 8- vs 4-connectivity in TR polygonisation** ([q03_connectivity](figure_review/script_check_answers/q03_connectivity/)). The production `threshold_tifs.py` polygonises the `B08 >= 0.22` mask at 8-connectivity by default, so two icebergs whose pixels touch through a single bright pixel become one polygon. Re-vectorising the same masks at 4-connectivity over the 14,109 chips that pass the IC filter produces 476,187 polygons versus 436,979 at 8-connectivity (count delta +9.0 %); total iceberg area is identical to within float precision (1078.95 km^2 either way). Only 23.3 % of chips have any count delta at all. Decision: keep 8-connectivity; the area-based metrics this paper reports are unaffected by the choice, and switching to 4-connectivity to fragment touching icebergs would inflate the polygon count without recovering any new pixels.
+
+**Q8: Otsu on raw B08 vs log(B08)** ([q08_otsu_log](figure_review/script_check_answers/q08_otsu_log/)). The OT method computes Otsu on raw B08; a log-transform was proposed to handle skewed ocean-dominated histograms. Across all 23,981 chips, mean per-chip Otsu shifts from 0.2525 (raw) to 0.2318 (log), a delta of -0.0208 reflectance units. Mean iceberg-fraction shifts from 37.06 % to 38.72 %, a delta of +1.66 percentage points. The per-(region, SZA bin) breakdown shows the same direction in every bin and never more than ~3 percentage points of iceberg-fraction movement. Decision: keep raw-B08 Otsu; the log-transform shifts the threshold a few percent but does not change the qualitative behaviour, and adding a log step makes the method less directly comparable to Fisser and others (2024)'s reflectance-space discussion.
+
+**Q9 / Q10: IC filter against Otsu vs fixed reference, and ordering** ([q09_ic_fixed_vs_otsu](figure_review/script_check_answers/q09_ic_fixed_vs_otsu/), [q10_otsu_ic_order](figure_review/script_check_answers/q10_otsu_ic_order/)). The OT method's chip-level IC test currently fires when more than 15 % of pixels exceed the per-chip Otsu threshold; a reviewer might prefer a fixed B08 >= 0.22 reference so "sea ice contamination" means the same thing across chips. Across 23,981 chips at the production 0.15 cutoff, only 54.3 % of chips agree on the skip decision: 4.5 % are skipped only by the fixed-reference IC test (chips where the Otsu threshold is comfortably below 0.22 yet the chip is still bright in absolute terms), and 41.2 % are skipped only by the Otsu IC test (chips where the per-chip Otsu landed low and amplified the apparent ice fraction). The order-of-operations probe in Q10 confirms a 41.2 % flip rate between IC-then-Otsu and Otsu-then-IC, identical to the Otsu-only-skip share above. Decision: keep the production order (compute Otsu, then test whether 15 % of pixels exceed the Otsu threshold) because that is the per-chip-adaptive contamination definition the OT method is built around; flag in the paper that a fixed-reference IC test would skip a substantially different chip set and is the right tool only if the goal is cross-chip comparability rather than per-chip adaptation.
+
+**Q4: NDWI threshold sweep for the masked-TR branch** ([q04_ndwi_sweep](figure_review/script_check_answers/q04_ndwi_sweep/)). The TR_NDWI sensitivity branch in `threshold_masked_tifs.py` requires NDWI > 0 to call a pixel open water before the B08 >= 0.22 test. Sweeping NDWI in {-0.05, 0.0, 0.05, 0.10, 0.20} on the full chip pool shows that tightening NDWI from 0 to +0.05 already cuts total iceberg area by 26.7 %, to +0.10 by 53.7 %, and to +0.20 by 86.2 %. Loosening to -0.05 changes area by less than 0.5 %. The drop is concentrated in iceberg-water mixed brash and melange features in open fjord water, not in shoreline pixels, consistent with NDWI compression at high SZA. Decision: keep NDWI > 0 (McFeeters 1996 default); a positive cutoff over-tightens on this dataset, and the residual cloud-edge tail is better addressed by a stronger cloud detector than by raising the NDWI threshold.
+
+**Q12: Top-hat structuring-element radius sweep** ([q12_tophat_se_radius](figure_review/script_check_answers/q12_tophat_se_radius/)). The production `tophat_recover.py` uses `disk(10)` (100 m radius) on B08 with a 0.05 reflectance threshold, drawn from Fisser and others (2024)'s 100 m visual-delineation lower bound. Sweeping disk radius across {5, 10, 15, 20} pixels on the v4_clean test chips with UNet base masks shows the trade-off cleanly: disk(5) recovers 7,683 polygons covering 119.6 km^2 (33.7 polys/chip); disk(10) the production setting recovers 6,742 / 150.7 km^2 (29.6 polys/chip); disk(15) recovers 6,274 / 170.6 km^2; disk(20) recovers 6,075 / 181.4 km^2. Larger discs give fewer but larger candidate polygons because the top-hat response captures more of each iceberg interior. Decision: keep disk(10); the gain in recovered area at disk(15) and disk(20) is offset by larger candidates that the per-component 40 m root-length filter would also accept downstream, blurring the small-iceberg-recovery target.
+
+**Q13: Top-hat response threshold (fixed 0.05 vs principled estimators)** ([q13_tophat_threshold](figure_review/script_check_answers/q13_tophat_threshold/)). The production 0.05 fixed cutoff on the top-hat response was chosen by eye. Computing per-chip Otsu of the response and per-chip 3 sigma on the same test chips: the production fixed 0.05 yields 6,742 recovered polygons; per-chip Otsu yields 4,760; per-chip 3 sigma yields 2,718. Both data-driven thresholds are stricter than the fixed 0.05 because the top-hat response is sparse and dominated by chip-level noise outside iceberg interiors, so Otsu and 3 sigma both place the threshold above 0.05 on most chips. Decision: keep the fixed 0.05; the data-driven thresholds reduce recovery substantially (-29 % to -60 %) without a clear gain in precision, and 0.05 has the virtue of being chip-independent and reproducible across runs.
+
+**Q14: CRS-mismatch audit for the rasterised-polygon base-mask path** ([q14_tophat_crs_audit](figure_review/script_check_answers/q14_tophat_crs_audit/)). The TH method falls back to rasterising base-method polygons when `<stem>_pred.tif` is missing; this path is only safe if the gpkg's CRS matches the chip's CRS. Auditing 463 (chip, base-method) pairs across the v4_clean test set finds 0 mismatches: every KQ chip has chip CRS EPSG:32624 paired with gpkg CRS EPSG:32624 (227 pairs), and every SK chip has EPSG:32625 / EPSG:32625 (236 pairs). Decision: the rasterised-polygon fallback path is safe in practice; the `try/except` belt around the cross-chip aggregate gpkg can stay since some Fisser synthetic chips carry CRS=None upstream of this method, but no in-method CRS reprojection is required.
+
+**Q20: CRF iterations convergence** ([q20_crf_iterations](figure_review/script_check_answers/q20_crf_iterations/)). The production DenseCRF mean-field schedule runs five iterations. Sweeping iterations in {1, 3, 5, 10, 20} on 171 v4_clean test chips and measuring the per-chip mask delta (fraction of pixels that flip between successive iteration counts), the curve converges quickly: 1 -> 3 changes 0.137 % of pixels, 3 -> 5 changes 0.043 %, 5 -> 10 changes 0.036 %, 10 -> 20 changes 0.021 %. The marginal gain past five iterations is two to four times smaller than the gain from one to five, and the residual change at iter 20 is below 0.05 % on every chip's 99th percentile. Decision: five iterations is enough; running to 20 changes the mask by less than 0.1 % on every observed chip and is not worth the runtime cost.
+
+The twelve questions resolved here are removed from the reviewer pack so the external review focuses on the remaining unanswered questions; the historical question text and the empirical answers are preserved in `iceberg-rework/script-check-README.md` for traceability.
+
+## Planned Methodology Figures
+
+### Fig. 4. Evaluation schematic
+
+Create a reader-friendly schematic explaining how binary predictions become the reported per-iceberg metrics. The figure should use a left-to-right pipeline:
+
+`ground-truth mask + predicted mask -> connected components -> IoU matrix -> Hungarian matching -> matched/unmatched objects -> MAE / IoU / MSE reporting table`
+
+The schematic should include:
+
+- **Ground-truth components**: show a simple mask or real test chip with ground-truth iceberg components outlined in blue and labelled `GT1`, `GT2`, `GT3`.
+- **Predicted components**: show predicted iceberg components outlined in orange and labelled `P1`, `P2`, `P3`.
+- **IoU-based matching**: show a compact IoU matrix with ground-truth components as rows and predicted components as columns. Highlight the selected Hungarian matches and note that matches with IoU < 0.3 are dropped.
+- **Matched and unmatched outcomes**: explicitly mark matched pairs as evaluated pairs, unmatched ground-truth objects as false negatives, and unmatched predictions as false positives.
+- **Metric table**: include a compact reporting table with columns `Method`, `SZA bin`, `Area MAE`, `Root-length MAE`, `Mean IoU`, `MSE`, and `Match rate`. Use real baseline values if available; otherwise use clearly schematic placeholder values.
+
+Implementation target:
+
+- Add `iceberg-rework/scripts/make_fig4_evaluation_schematic.py`.
+- Prefer a real `v4_clean` test chip with multiple ground-truth and predicted components.
+- Load baseline outputs from `runs/exp_baseline_v1/20260424_185158/inference/` and `runs/exp_baseline_v1/20260424_185158/per_iceberg/` if available locally.
+- If real outputs are unavailable, generate simple synthetic masks that exactly illustrate the same connected-component, IoU, Hungarian-match, false-negative, and false-positive logic.
+- Save through the figure registry to `iceberg-rework/viz/paper_figures/fig4_evaluation_schematic.png`.
+- Optionally copy the final PNG to `paper-writing/figures/fig4_evaluation_schematic.png`.
+
+Draft caption:
+
+Fig. 4. Evaluation workflow for per-iceberg metrics. Ground-truth and predicted masks are decomposed into connected components, pairwise IoU is computed, and Hungarian assignment selects non-overlapping matches. Matched pairs contribute area MAE, root-length MAE, IoU, and MSE; unmatched ground-truth objects are counted as false negatives and unmatched predictions as false positives. Match rate is reported alongside error metrics to disclose selection bias.
+
+Validation checklist:
+
+- Confirm the figure explicitly shows ground-truth components, predicted components, the IoU matrix, Hungarian matching, unmatched false negatives, unmatched false positives, and the MAE / IoU / MSE reporting table.
+- Confirm the schematic matches the evaluator: Hungarian assignment on `1 - IoU`, matches below IoU < 0.3 dropped, MAE primary, IoU secondary, and MSE supplementary.
+- Confirm the figure makes no new model-method claims; it explains evaluation only.

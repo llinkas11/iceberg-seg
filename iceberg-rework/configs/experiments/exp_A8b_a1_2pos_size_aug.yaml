@@ -1,0 +1,25 @@
+# A8b: A5a + size oversample (scheme_K), aug=on.
+#
+# Fair test of fixed-positive class balancing composed with size oversample
+# on A1. aug=on for the size step.
+
+id: exp_A8b_a1_2pos_size_aug
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      v4_raw_lt65_plus_nulls
+    balancing_scheme: scheme_K_two_pos_per_null_size_balanced
+  augmentation:
+    enabled: true
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A8b
+  compared_to: exp_A1_fisser_lt65_plus_nulls
+
+notes: |
+  Composition: D + J on A1, aug=on. Pairs with A7b (no class step) and A9b
+  (adaptive class direction) as the 1x3 size + class grid on the A1 backbone.

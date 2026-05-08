@@ -1,0 +1,5 @@
+method,sza_bin,n_pairs,mean_iou,median_iou,mean_abs_area_err_m2,median_abs_area_err_m2,mean_abs_rootlen_err_m,median_abs_rootlen_err_m,mean_sq_area_err_m2
+UNet,sza_lt65,2648,0.67,0.7027,2579.0785,900.0,12.92,8.097,54383202.4169
+UNet,sza_65_70,0,,,,,,,
+UNet,sza_70_75,0,,,,,,,
+UNet,sza_gt75,0,,,,,,,
