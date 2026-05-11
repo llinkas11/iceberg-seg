@@ -88,7 +88,7 @@ For `writing-only` findings, restrict to the docs the user named. For `new-eval`
 
 Edit locally. **Never** `git push` to Overleaf without explicit user approval; print the push command and stop.
 
-Files (verified during planning, 2026-05-07):
+Files (verified 2026-05-11):
 - `paper-writing/overleaf/git-mirror/main.tex`: main paper.
 - `paper-writing/overleaf/git-mirror/supplementary.tex`: supplementary appendix.
 - `paper-writing/overleaf/git-mirror/references.bib`: bibliography.
@@ -120,10 +120,12 @@ Grep first for the OLD value, edit second. Common stale-value sites:
 - `predict_tifs.py`, `predict.py`: default checkpoint path.
 - `export_onnx.py`: checkpoint path docstring (currently `s2_20260227_231556/best_model.pth`).
 - `chip_sentinel2.py`: `runs/s2_*/best_model.pth` glob in help text.
-- `run_pipeline.sh`: any pinned run IDs.
+- `run_pipeline.sh`: any pinned run IDs (CKPT line, currently pinned to `s2_20260227_231556`).
 
 `iceberg-rework/`:
-- `configs/*.yaml`: `prob_threshold`, `seed`, backbone, augmentation, balance scheme.
+- `configs/experiments/*.yaml`: per-experiment configs (A0 to A9, B0 to B5, baseline_v1, ablations). Contain `prob_threshold`, `seed`, backbone, augmentation, balance scheme.
+- `configs/balancing/*.yaml`, `configs/baselines/*.yaml`, `configs/datasets/*.yaml`, `configs/methods/*.yaml`: shared sub-configs referenced by experiments. Sweep these too if a dataset, balancing scheme, baseline, or method default changed.
+- `scripts/run_pipeline.sh`: also has a pinned CKPT line (`s2_20260227_231556`); update in lockstep with `S2-iceberg-areas/run_pipeline.sh`.
 - `scripts/run_experiment.py`: stage defaults.
 - `scripts/run_methods.sh`: flag forwarding (PR-11 lesson: drift here caused the UNet_TR baseline issue; verify `--prob_threshold` is passed through to `threshold_probs.py`).
 
