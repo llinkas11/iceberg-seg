@@ -1,0 +1,44 @@
+{
+  "extra": {
+    "checkpoint": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_baseline_v1_raw/20260428_092402/model/best_model.pth",
+    "training_config": {
+      "args": {
+        "batch_size": 16,
+        "data_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/data/v4_raw",
+        "encoder": "resnet34",
+        "epochs": 100,
+        "lr": 0.0001,
+        "mode": "s2",
+        "no_augment": false,
+        "no_pretrain": false,
+        "out_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_baseline_v1_raw/20260428_092402/model",
+        "seed": 42,
+        "workers": 4
+      },
+      "experiment_mode": true,
+      "git_sha": null,
+      "manifest_id": "v4_raw",
+      "metrics": {
+        "best_val_iou": 0.527510917186737,
+        "test_iou": 0.4588165218010545,
+        "test_loss": 0.7808223515748978
+      },
+      "reproducible": true,
+      "run_kind": "training",
+      "run_started_utc": "2026-04-28T13:34:54+00:00",
+      "script": "train.py"
+    }
+  },
+  "git_sha": null,
+  "method": "UNet",
+  "out_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/runs/exp_baseline_v1_raw/20260428_092402/inference/sza_70_75/UNet",
+  "params": {
+    "imgs_dir": "/mnt/research/v.gomezgilyaspik/students/llinkas/iceberg-rework/data/v4_raw/test_chips/sza_70_75",
+    "min_area_m2": 100.0,
+    "mode": "s2",
+    "num_classes": 1,
+    "save_probs": true
+  },
+  "run_kind": "inference_method",
+  "run_utc": "2026-04-28T13:38:08+00:00"
+}

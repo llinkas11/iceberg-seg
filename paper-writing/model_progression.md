@@ -75,12 +75,18 @@ Notes:
 
 ---
 
-## Phase B: method progression (all SZA bins, Phase A winner)
+## Phase B: method progression (Phase A winner)
 
-Once Phase A selects a dataset (most likely A4, A5, or A6), we freeze it and
-sweep the six methods over all four SZA bins. Every row shares the same
-trained UNet checkpoint and the same test chips; only the post-processing
-differs. One training run, six reports.
+Once Phase A selects a dataset, we freeze it and sweep the six methods. Every
+row shares the same trained UNet checkpoint and the same test chips; only the
+post-processing differs. One training run, six reports.
+
+The original Phase B (Slurm 20260503) ran on the A0 checkpoint over the
+`sza_lt65` test split only, because Phase A itself was lt65-scoped. The
+2026-05-05 follow-up (Slurm 60296, 60297) re-runs the same six-method sweep
+with both A0 and A1 backbones over all four SZA bins on the v4_clean test
+split; see "Higher-SZA generalisation and backbone re-eval" below for the
+backbone comparison.
 
 | # | Method                      | What varies vs prior step       | Motivation                                                                                                                         | YAML                              |
 |---|-----------------------------|----------------------------------|------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------|
@@ -129,6 +135,22 @@ progression step. Each panel is:
 
 This collapses the progression story into one full-page figure a reader can
 scan without reading prose.
+
+---
+
+## Higher-SZA generalisation and backbone re-eval (added 2026-05-05; expanded 2026-05-05 evening)
+
+Both Phase A and the original Phase B were `sza_lt65`-scoped (manifests v4_raw_lt65* and v4_clean_lt65* contain only lt65 chips). Three follow-up runs on moosehead (Slurm 60293, 60296, 60297) re-evaluate every Phase A checkpoint and re-run Phase B with two different backbones across all four SZA bins on the unifying v4_clean test split. The 2026-05-05 evening expansion (Slurm 60309-60316 + 60318) adds 8 A1-anchored variants (A5a..A9a aug=off, A7b..A9b aug=on, all on `v4_raw_lt65_plus_nulls`) so Phase A's class- and size-balancing axes are tested on top of A1's manifest rather than only on v4_clean_lt65_plus_nulls. Full tables (T1 per-bin x 18 experiments, T2 best non-A0 per bin, T3 A0 vs A1 Phase B, T4 recommended pipeline) live in `shib_end_to_end/phase_a_higher_sza_t1_t4.md`.
+
+Headline findings (2026-05-05 evening, after the A1-anchored variants):
+
+- **A7b (= A1 + size oversample + augmentation; A7b == A8b == A9b by collapse) is the new higher-SZA champion** across all 18 Phase A backbones. A7b mean MAE 27.24 m and mean IoU 0.531 over the three higher-SZA bins, beating A1's 28.01 m / 0.499 and A0's 33.33 m / 0.490. A7b also beats A1 at lt65 (15.90 m vs 17.74 m); A0 still wins lt65 outright at 10.99 m.
+- **The 5 aug=off A1-anchored variants** (A5a == A6a, A7a == A8a == A9a) all beat A1 at higher SZA but trail A7b. The size-oversample axis (A7a vs A1) carries most of the lift; augmentation adds a final refinement at higher SZA (A7b vs A7a).
+- **The published lt65 headline (A0 + UNet_OT, 8.18 m MAE) reproduces** within rounding on the v4_clean lt65 split (8.45 m here); T3's A0 + UNet_OT lt65 cell is the canonical comparison.
+- **Phase B re-run with A7b complete (Slurm 60323, 7:20 wallclock; top-hat companions in 60328, 10:11 wallclock).** T4 cross-bin pipeline pick is now **A7b + UNet_CRF** (higher-SZA mean IoU 0.616 vs A1 + UNet_CRF's 0.602 at essentially tied MAE 15.59 m vs 15.21 m; A7b wins sza_gt75 outright on both metrics). Top-hat lifts UNet_OT recall in higher SZA but degrades UNet_CRF cross-bin, so A7b + UNet_CRF base (no TH) is the cleanest recommendation. lt65 still favours A0 + UNet_OT (8.45 m). Phase B + TH for the remaining 7 distinct backbones complete (Slurm 60337 + 60339); see `shib_end_to_end/phase_a_higher_sza_t1_t4.md` T3b for the all-10-backbone UNet_CRF comparison. A5a essentially ties A7b on 4-bin MAE (14.72 vs 14.75 m); A7b leads on 4-bin IoU (0.609 vs 0.606), so the recommendation stands.
+- The original "A1 wins every higher-SZA bin" framing was correct for the 10-experiment grid but is superseded by A7b in the 18-experiment grid.
+
+These results do not change Phase A's lt65 winner (still A0); they extend the model-selection story to higher SZA bins that Phase A could not previously address.
 
 ---
 

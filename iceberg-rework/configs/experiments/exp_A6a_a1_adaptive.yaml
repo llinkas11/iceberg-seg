@@ -1,0 +1,30 @@
+# A6a: A1 + 2:1 adaptive balancing (majority : minority), aug=off.
+#
+# Re-anchors the original A6 onto the A1 manifest. Sibling to A5a (fixed
+# positive direction). For lt65 chips where GT+ is the natural majority,
+# scheme_I resolves to the same direction as scheme_D, so A6a may collapse
+# to A5a as it did in T1's clean-preprocessing variants.
+
+id: exp_A6a_a1_adaptive
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      v4_raw_lt65_plus_nulls
+    balancing_scheme: scheme_I_two_to_one_adaptive
+  augmentation:
+    enabled: false
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A6a
+  compared_to: exp_A1_fisser_lt65_plus_nulls
+
+notes: |
+  A1 + adaptive class balancing. If A5a == A6a (collapse like the original
+  A5/A6 pair in T1), the lesson is that GT+ majority on the A1 manifest
+  forces both schemes into the same direction; if they diverge, the raw
+  preprocessing changed the natural class ratio enough to flip A6a's
+  direction.

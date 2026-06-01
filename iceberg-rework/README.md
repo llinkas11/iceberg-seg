@@ -169,6 +169,22 @@ python scripts/eval_per_iceberg.py \
     --iou_threshold 0.3
 ```
 
+**Cross-backbone re-eval drivers (2026-05-05):**
+
+```
+# Re-evaluate every Phase A backbone (A0..A9) on v4_clean for all 4 SZA bins
+# (UNet only, FORCE=1 to override dataset-drift guard intentionally).
+sbatch slurm/re_eval_phase_a.slurm
+
+# Re-run the six-method Phase B sweep with the A0 (or A1) checkpoint on
+# v4_clean for all 4 SZA bins. Outputs land under
+# runs/<exp>/<ts>/re_phase_b_v4_clean/.
+sbatch slurm/re_phase_b_a0.slurm
+sbatch slurm/re_phase_b_a1.slurm
+```
+
+These were used to populate the T1-T4 tables in `shib_end_to_end/phase_a_higher_sza_t1_t4.md` (higher-SZA generalisation + A0 vs A1 backbone comparison). Top-hat variants are NOT included; add `--with_tophat` inside the driver scripts to extend each method to its TH companion.
+
 ---
 
 ## Output schema

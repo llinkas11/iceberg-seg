@@ -207,14 +207,14 @@ Fisser's three-class masks (ocean, iceberg, shadow) are reduced to binary by rem
 Connected components smaller than 16 pixels (1,600 m$^2$, 40 m root length) are removed. Matches Fisser (2025) dataset minimum.
 
 ### Annotation-aware IC filtering
-IC = fraction of non-annotated pixels with B08 >= 0.22. Training chips with IC >= 15 % have bright non-annotated pixels masked to zero. Validation and test never masked. 193 training chips were masked in the v4_clean build. Justification: `reference/b08_analysis_results_discussion.md` sections 3.1-3.6.
+IC = fraction of non-annotated pixels with B08 >= 0.22. Training chips with IC >= 15 % have bright non-annotated pixels masked to zero. Validation and test never masked. 193 training chips were masked in the v4_clean build. Justification: `reference/b08_analysis_results_discussion.md` sections 3.1-3.6. Sensitivity sweep across the full 23,981-chip pool at IC cutoffs in {10, 15, 20, 25, 30}% is summarised in `methods_draft.md` Section 2.14 and stored under `figure_review/script_check_answers/q01_ic_cutoff_sweep/`.
 
 ### DN offset
 Reflectances are +0.10 high relative to Fisser's space because chip_sentinel2.py applies the 10$^{-4}$ scaling without subtracting the 1000 DN N0500 offset. Fisser's 0.12 = our 0.22. Internal consistency holds because every chip shares the offset.
 
 ---
 
-## Critical numbers (verified 2026-04-27)
+## Critical numbers (verified 2026-04-27, 2026-05-05 addendum below)
 
 - v4_clean: 916 chips total. chips_sha = `fc4b3b16334f2916...`.
 - Splits: 551 / 137 / 228. Test cap: 57 chips per SZA bin.
@@ -222,3 +222,10 @@ Reflectances are +0.10 high relative to Fisser's space because chip_sentinel2.py
 - Per-pair MAE on root length (m), best per bin: UNet_OT 8.0 at lt65; UNet_CRF 7.4 / 9.0 / 12.6 at 65-70 / 70-75 / >75. Threshold-only methods (TR, OT) over-detect with low precision (5-9%) and worsen with rising SZA.
 - 19 experiment YAMLs: baseline_v1 + A0-A9 + B0-B5 + ablation_no_aug + ablation_no_nulls. All validate locally and on HPC.
 - 12 balancing schemes: A-I (single axis) + J/K/L (size + composed).
+
+### 2026-05-05 addendum: Phase A higher-SZA re-eval and backbone comparison
+
+- All 10 Phase A backbones (A0..A9) re-evaluated against the v4_clean test split for all four SZA bins (Slurm 60293). A1 mean per-pair IoU 0.499 across the three higher-SZA bins (best non-A0); A0 0.490; A4 0.437 (2nd-best non-A0). Augmentation alone (A4) and class balancing (A5/A6) do not close the A1 gap; size oversample (A7/A8/A9) actively hurts higher-SZA generalization.
+- Phase B re-run with three backbones (A0, A1, A7b) on v4_clean across 12 methods (six base + six top-hat companions, Slurm 60296 / 60297 / 60323 / 60328). The cross-bin pipeline pick shifted from A1 + UNet_CRF to **A7b + UNet_CRF** after the 2026-05-05 evening A1-anchored variants landed: A7b + UNet_CRF beats A1 + UNet_CRF on per-pair IoU in every higher-SZA bin (mean 0.616 vs 0.602) at essentially tied MAE (15.59 m vs 15.21 m); A7b wins sza_gt75 outright on both metrics. Top-hat companions improve UNet_OT recall in higher SZA bins but degrade UNet_CRF cross-bin, so A7b + UNet_CRF base (no TH) is the cleanest single-pipeline recommendation. lt65 still favours A0 + UNet_OT (8.45 m, reproducing the published 8.18 m within rounding).
+- New driver scripts in `iceberg-rework/scripts/`: `re_eval_phase_a_all_sza.sh`, `re_phase_b_with_a0.sh`, `re_phase_b_with_a1.sh`. Slurm wrappers in `iceberg-rework/slurm/`: `re_eval_phase_a.slurm`, `re_phase_b_a0.slurm`, `re_phase_b_a1.slurm`. Top-hat (`--with_tophat`) NOT included; one more sweep would close that gap.
+- Full T1-T4 tables: `shib_end_to_end/phase_a_higher_sza_t1_t4.md`. Cross-references in `paper-writing/methods_draft.md` (Section 2.6 backbone-selection subsection), `paper-writing/model_progression.md` (higher-SZA generalisation section), `paper-writing/plan.md` (status banner), `shib_end_to_end/README.md` (overview pointer + headline-numbers rows).

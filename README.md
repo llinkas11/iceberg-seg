@@ -23,7 +23,11 @@ Segmentation of icebergs in Sentinel-2 L1C imagery across four solar zenith angl
 - **`paper-writing/iceberg-rework-README.md`**: project README with folder layout and data tables.
 - **`iceberg-rework/README.md`**: HPC quick-start (how to run experiments).
 
-## How to run an experiment
+## Reproducing the paper from a fresh machine
+
+See [REPRODUCE.md](REPRODUCE.md) for the post-graduation recipe: clone, pull the bulk-data tarballs from the `archive-v1` GitHub release, set up a conda env, run a smoke test on the canonical baseline. [DATA_ARCHIVE.md](DATA_ARCHIVE.md) lists every tarball with its source path on HPC and SHA-256.
+
+## How to run an experiment (during active work)
 
 From a moosehead shell:
 

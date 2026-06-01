@@ -36,10 +36,140 @@ warnings.filterwarnings("ignore")
 
 NIR_THRESHOLD  = 0.22   # Fisser 2024 B08 threshold (0.12) + 0.10 DN offset correction
                         # All scenes baseline ≥4.0: chip_sentinel2.py does not subtract +1000 DN offset
-NDWI_THRESHOLD = 0.0    # NDWI > 0 → open water (negative = ice/land/cloud)
+NDWI_THRESHOLD = 0.0    # McFeeters 1996 default. Fisser 2024 does not use NDWI;
+                        # this is a chip-level land-edge safeguard. KQ sweep
+                        # (sweep_ndwi_threshold.py) shows raising to 0.05 cuts
+                        # 21% of total iceberg area (26% at SZA > 75°) by killing
+                        # iceberg-water mixed pixels, not land edges, so 0 stays.
 MIN_AREA_M2    = 100    # ~10×10 m minimum polygon
-IC_THRESHOLD   = 0.15   # Fisser 2025 IC block filter: skip chip if >15% of pixels exceed NIR threshold
+IC_THRESHOLD   = 0.15   # Fisser 2025 IC block filter (eq. 2): skip chip if >15% of pixels exceed NIR threshold
                         # Flags chips dominated by sea ice rather than open water with icebergs
+                        # Original Fisser 2025 rule: 10 km block; we apply at 2.56 km chip level (pre-tiled chips)
+
+
+def _apply_thresholds(
+    b03,
+    b08,
+    transform,
+    source_name,
+    nir_threshold=NIR_THRESHOLD,
+    ndwi_threshold=NDWI_THRESHOLD,
+    min_area_m2=MIN_AREA_M2,
+    ic_threshold=IC_THRESHOLD,
+):
+    """Apply IC + NDWI + B08 thresholds to band arrays.
+
+    Inputs:
+        b03, b08    : 2-D float reflectance arrays.
+        transform   : rasterio affine for polygonization.
+        source_name : basename string stored on each polygon record.
+    Returns dict: ic_skipped, records, n_polygons, total_area_m2,
+                  water_px, iceberg_px, ic_frac.
+    """
+    out = {
+        "ic_skipped"   : False,
+        "records"      : [],
+        "n_polygons"   : 0,
+        "total_area_m2": 0.0,
+        "water_px"     : 0,
+        "iceberg_px"   : 0,
+        "ic_frac"      : float("nan"),
+    }
+
+    # 1. IC block filter (Fisser 2025): skip sea-ice-dominated chips
+    ic_frac = float((b08 >= nir_threshold).mean())
+    out["ic_frac"] = ic_frac
+    if ic_frac > ic_threshold:
+        out["ic_skipped"] = True
+        return out
+
+    # 2. NDWI water mask: open water has positive NDWI
+    ndwi       = (b03 - b08) / (b03 + b08 + 1e-6)
+    water_mask = (ndwi > ndwi_threshold).astype(np.uint8)
+    out["water_px"] = int(water_mask.sum())
+
+    # 3. Iceberg mask: bright NIR within open-water pixels
+    iceberg_mask = ((b08 >= nir_threshold) & (water_mask == 1)).astype(np.uint8)
+    out["iceberg_px"] = int(iceberg_mask.sum())
+
+    # 4. Polygonize and filter by min-area
+    records = []
+    for geom_dict, val in rio_shapes(iceberg_mask, transform=transform):
+        if val == 0:
+            continue
+        geom = shape(geom_dict)
+        if geom.is_empty or geom.area < min_area_m2:
+            continue
+        records.append({
+            "geometry"   : geom,
+            "class_id"   : 1,
+            "class_name" : "iceberg",
+            "area_m2"    : round(geom.area, 2),
+            "source_file": source_name,
+        })
+
+    out["records"]       = records
+    out["n_polygons"]    = len(records)
+    out["total_area_m2"] = float(sum(r["area_m2"] for r in records))
+    return out
+
+
+def detect_icebergs_in_chip(
+    tif_path,
+    b03_idx=1,
+    b08_idx=2,
+    nir_threshold=NIR_THRESHOLD,
+    ndwi_threshold=NDWI_THRESHOLD,
+    min_area_m2=MIN_AREA_M2,
+    ic_threshold=IC_THRESHOLD,
+):
+    """Run NDWI-masked Fisser threshold on one chip read from disk.
+
+    Inputs:
+        tif_path         : path to a Sentinel-2 chip GeoTIFF.
+        b03_idx, b08_idx : 0-indexed band positions.
+    Returns dict: band_skipped, n_bands, crs, plus all keys from
+                  _apply_thresholds (ic_skipped, records, n_polygons,
+                  total_area_m2, water_px, iceberg_px, ic_frac).
+    """
+    out = {
+        "band_skipped" : False,
+        "n_bands"      : 0,
+        "crs"          : None,
+        "ic_skipped"   : False,
+        "records"      : [],
+        "n_polygons"   : 0,
+        "total_area_m2": 0.0,
+        "water_px"     : 0,
+        "iceberg_px"   : 0,
+        "ic_frac"      : float("nan"),
+    }
+
+    # 1. Read chip
+    with rio.open(tif_path) as src:
+        chip = src.read().astype(np.float32)
+        meta = src.meta.copy()
+    out["crs"]     = meta["crs"]
+    out["n_bands"] = chip.shape[0]
+
+    # 2. Validate band count
+    if out["n_bands"] <= max(b03_idx, b08_idx):
+        out["band_skipped"] = True
+        return out
+
+    # 3. Apply thresholds on band arrays
+    inner = _apply_thresholds(
+        chip[b03_idx],
+        chip[b08_idx],
+        meta["transform"],
+        os.path.basename(tif_path),
+        nir_threshold  = nir_threshold,
+        ndwi_threshold = ndwi_threshold,
+        min_area_m2    = min_area_m2,
+        ic_threshold   = ic_threshold,
+    )
+    out.update(inner)
+    return out
 
 
 def apply_masked_threshold(
@@ -72,59 +202,39 @@ def apply_masked_threshold(
     for i, tif_path in enumerate(tif_files):
         stem = os.path.splitext(os.path.basename(tif_path))[0]
 
-        with rio.open(tif_path) as src:
-            chip = src.read().astype(np.float32)   # (C, H, W)
-            meta = src.meta.copy()
+        # 1. Detect icebergs on this chip
+        res = detect_icebergs_in_chip(
+            tif_path,
+            b03_idx        = b03_idx,
+            b08_idx        = b08_idx,
+            nir_threshold  = nir_threshold,
+            ndwi_threshold = ndwi_threshold,
+            min_area_m2    = min_area_m2,
+            ic_threshold   = ic_threshold,
+        )
 
-        n_bands = chip.shape[0]
-        if n_bands <= max(b03_idx, b08_idx):
-            print(f"  [{i+1}/{len(tif_files)}] SKIP {stem} — only {n_bands} band(s)")
+        # 2. Log skipped chips
+        if res["band_skipped"]:
+            print(f"  [{i+1}/{len(tif_files)}] SKIP {stem}: only {res['n_bands']} band(s)")
             n_skipped += 1
             continue
 
-        b03 = chip[b03_idx]
-        b08 = chip[b08_idx]
-
-        # IC block filter (Fisser 2025): skip sea-ice-dominated chips
-        ic_frac = float((b08 >= nir_threshold).mean())
-        if ic_frac > ic_threshold:
+        if res["ic_skipped"]:
             print(
-                f"  [{i+1:>4}/{len(tif_files)}] IC   {stem[:55]}  ic_frac={ic_frac:.2f}"
+                f"  [{i+1:>4}/{len(tif_files)}] IC   {stem[:55]}  ic_frac={res['ic_frac']:.2f}"
             )
             n_ic += 1
             continue
 
-        # NDWI water mask: open water has positive NDWI
-        ndwi       = (b03 - b08) / (b03 + b08 + 1e-6)
-        water_mask = (ndwi > ndwi_threshold).astype(np.uint8)
-
-        # Apply NIR threshold restricted to open-water pixels
-        iceberg_mask = ((b08 >= nir_threshold) & (water_mask == 1)).astype(np.uint8)
-
-        records = []
-        for geom_dict, val in rio_shapes(iceberg_mask, transform=meta["transform"]):
-            if val == 0:
-                continue
-            geom = shape(geom_dict)
-            if geom.is_empty or geom.area < min_area_m2:
-                continue
-            records.append({
-                "geometry"   : geom,
-                "class_id"   : 1,
-                "class_name" : "iceberg",
-                "area_m2"    : round(geom.area, 2),
-                "source_file": os.path.basename(tif_path),
-            })
-
-        n_water_px   = int(water_mask.sum())
-        n_iceberg_px = int(iceberg_mask.sum())
+        # 3. Log per-chip detection counts
         print(
             f"  [{i+1:>4}/{len(tif_files)}] {stem[:55]}  "
-            f"water_px={n_water_px:>6}  icebergs={len(records)}"
+            f"water_px={res['water_px']:>6}  icebergs={res['n_polygons']}"
         )
 
-        if records:
-            gdf = gpd.GeoDataFrame(records, crs=meta["crs"])
+        # 4. Accumulate polygon records into a GeoDataFrame
+        if res["records"]:
+            gdf = gpd.GeoDataFrame(res["records"], crs=res["crs"])
             all_gdfs.append(gdf)
 
     if not all_gdfs:

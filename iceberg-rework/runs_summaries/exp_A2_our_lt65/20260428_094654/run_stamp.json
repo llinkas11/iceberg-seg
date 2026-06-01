@@ -1,0 +1,12 @@
+{
+  "experiment_id": "exp_A2_our_lt65",
+  "baseline_id": "baseline_v1",
+  "config_sha": "3f7563b5b3bc2fb74d6ef5076905b29ed39f88c861769b0c96b82328d5879470",
+  "run_utc": "2026-04-28T13:52:18+00:00",
+  "stages_run": [
+    "manifest",
+    "train",
+    "infer",
+    "evaluate"
+  ]
+}

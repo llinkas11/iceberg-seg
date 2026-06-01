@@ -1,0 +1,28 @@
+# A7b: A1 + size-only oversample, aug=on.
+#
+# Fair test of size oversample on the A1 manifest: aug=on so replicated
+# chips get distinct geometric views per epoch (no memorisation). Pairs
+# with A7a as the aug ablation.
+
+id: exp_A7b_a1_size_aug
+inherits: baseline_v1
+
+change:
+  data:
+    manifest_id:      v4_raw_lt65_plus_nulls
+    balancing_scheme: scheme_J_oversample_size_balanced
+  augmentation:
+    enabled: true       # required for size oversample to avoid memorisation
+
+controlled_variable: data
+
+progression:
+  phase: A
+  step: A7b
+  compared_to: exp_A1_fisser_lt65_plus_nulls
+
+notes: |
+  Two changes from A1: balancing_scheme and aug. Strictly multi-variable, but
+  the scheme_J + aug pairing is mechanistic (oversample requires aug) so the
+  delta is read jointly. Sibling A7a holds aug off as the controlled-variable
+  control.

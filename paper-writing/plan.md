@@ -1,8 +1,8 @@
 # Iceberg Segmentation Pipeline: Project State
 
-**Status:** Refactor complete (Phases 1-6). v4_clean dataset built and frozen. baseline_v1 trained and evaluated. Phase A 2x3 grid (size balance x class balance) registered as 10 YAMLs, runner ready. Phase B method sweep is a single inference dispatch on the trained checkpoint, runner ready. Per-pair MAE + IoU tables published for the canonical baseline.
+**Status:** Refactor complete (Phases 1-6). v4_clean dataset built and frozen. baseline_v1 trained and evaluated. Phase A 2x3 grid (size balance x class balance) registered as 10 YAMLs, runner ready. Phase B method sweep is a single inference dispatch on the trained checkpoint, runner ready. Per-pair MAE + IoU tables published for the canonical baseline. **2026-05-05 addendum:** Phase A re-eval on all four SZA bins and Phase B backbone comparison (A0 vs A1) complete; A1 wins higher-SZA bins, A0 still wins lt65, A1 + UNet_CRF was the original cross-bin pipeline pick. **2026-05-05 evening update:** 8 A1-anchored Phase A variants trained and re-evaluated (A5a..A9a aug=off, A7b..A9b aug=on). A7b (== A8b == A9b by collapse) is the new higher-SZA champion: mean MAE 27.24 m vs A1's 28.01 m and A0's 33.33 m. A7b also beats A1 at lt65 (15.90 m vs 17.74 m); A0 still wins lt65 outright. **2026-05-06 update:** Phase B re-run with A7b backbone (Slurm 60323) + top-hat companions (Slurm 60328) complete. **A7b + UNet_CRF** is the new cross-bin pipeline pick: higher-SZA mean IoU 0.616 vs A1's 0.602 at essentially tied MAE (15.59 m vs 15.21 m). Top-hat helps UNet_OT recall but degrades UNet_CRF cross-bin, so A7b + UNet_CRF base (no TH) is the recommendation. See `shib_end_to_end/phase_a_higher_sza_t1_t4.md` for T1 through T5.
 
-**Last verified:** 2026-04-27.
+**Last verified:** 2026-05-05.
 **Latest git commit:** `7f8b100` on `main`, github.com/llinkas11/iceberg-seg.
 **Authoritative state:** this file.
 **Methodology:** `methods_draft.md`.
@@ -40,6 +40,8 @@ See `model_progression.md` for the full table with motivations.
 | PR-8 | Fisser test chip evaluability | All 330 Fisser pkl chips have synthetic GeoTIFFs at `data/raw_chips/fisser/<chip_stem>.tif`. eval_methods + eval_per_iceberg load Fisser test chips through the same code path as Roboflow chips. |
 | PR-9 | Augmentation vs class imbalance distinction | Augmentation diversifies *each chip's geometric views*, not *class frequency*. Oversample-only size balancing (scheme_J) addresses gradient-frequency imbalance separately, paired with augmentation. |
 | PR-10 | Preprocessing-pipeline isolation | Audit on Fisser lt65 (2026-04-27): 41,644 of 70,818 components removed by 40 m filter (58.8 %); 312 of 330 chips altered; 129 of 226 training chips IC-masked (57.1 %). Both filters substantially edit Fisser data. Decision: build a `v4_raw` companion (no 40 m, no IC mask, no IC chip-drop) and report a parallel table. A0/A1 anchor on `v4_raw_lt65`; A2-A9 anchor on `v4_clean_lt65`. A0 -> A2 isolates the preprocessing pipeline as a single controlled variable. |
+| PR-11 | UNet_TR threshold config drift | Investigation triggered by A2's UNet_TR collapse (4 / 8,468 matches). Root cause: `baseline_v1.yaml` declared `methods.UNet_TR.prob_threshold: 0.5`, but `run_methods.sh` never forwarded it to `threshold_probs.py`, so the script's hardcoded `THRESHOLD = 0.22` always won. Every UNet_TR number in the project, including the canonical baseline_v1 headline table, was produced at 0.22 not 0.5. Fixed 2026-04-29: `run_experiment.py.stage_infer` now reads `prob_threshold` from the merged config and passes `--prob_threshold` to `run_methods.sh`, which forwards `--threshold` to `threshold_probs.py`. `baseline_v1.yaml` updated to declare `prob_threshold: 0.22` (matches operational value, preserves reproducibility of published baseline numbers). UNet_OT and UNet_CRF have similar config drift (vestigial YAML keys not consumed by their scripts); audited but not fixed in this round, since they use script-default behaviour and changing it would invalidate baseline numbers. |
+| PR-12 | A2 UNet calibration shift is the experimental finding, not a bug | Probability-distribution audit (2026-04-29) on lt65 UNet outputs: median P(iceberg) on test pixels is 0.001 for baseline_v1, 0.013 for A0 (v4_raw_lt65), but 0.278 for A2 (v4_clean_lt65). 59 % of A2's pixels fall in 0.20-0.35 vs 0.4 % for baseline. UNet_TR predicted-polygon median area is 200 m^2 for A2 vs 2,200 m^2 for baseline (50 % of A2 polygons below 200 m^2 = speckle). Root cause: A2 trains on 198 chips with 112 IC-masked (57 %) and is evaluated on unmasked test chips, a train-test domain shift baked into the IC-mask design. All three runs use byte-identical hyperparameters (resnet34, 100 epochs, lr 1e-4, seed 42, batch 16, no_augment). Calibration drift is therefore a property of the data choice not the code. A0 vs A2 quantifies the cost of applying Fisser's 40 m + IC preprocessing in a low-data regime: best val IoU drops 0.61 -> 0.26. Reported in the paper as the headline preprocessing-impact finding rather than as a bug to fix. |
 
 ---
 
@@ -201,6 +203,28 @@ All B experiments share the baseline_v1 trained checkpoint; one training run pro
 
 ---
 
+## Phase A Leaderboard (2026-04-30)
+
+All ten Phase A experiments trained and evaluated. Byte-identical hyperparameters across all runs (resnet34, 100 epochs, lr=1e-4, batch=16, seed=42). Sorted by best val IoU.
+
+| ID | manifest | val IoU | test IoU | UNet match rate | UNet RL MAE (m) | comment |
+|---|---|---|---|---|---|---|
+| **A0** | `v4_raw_lt65` (Fisser preproc, no nulls) | **0.613** | **0.577** | **0.512** | **9.82** | Phase A winner. |
+| A1 | `v4_raw_lt65_plus_nulls` | 0.503 | 0.477 | 0.315 | 15.21 | -0.11 IoU vs A0 from null injection. |
+| A3 | `v4_clean_lt65_plus_nulls` | 0.269 | 0.336 | 0.182 | 15.69 | |
+| A2 | `v4_clean_lt65` | 0.261 | 0.344 | 0.245 | 15.26 | -0.35 IoU vs A0 from preprocessing. |
+| A7=A8=A9 | size oversample (J/K/L) | 0.243 | 0.320 | 0.163 | 14.78 | Identical training set on this manifest. |
+| A5=A6 | class balance (D/I) | 0.237 | 0.312 | 0.158 | 15.23 | Identical training set on this manifest. |
+| A4 | `v4_clean_lt65_plus_nulls` (no balance) | 0.225 | 0.274 | 0.122 | 14.93 | Lowest val IoU. |
+
+Empirical 2x3 collapse: A5 == A6 (D and I equivalent on GT+-majority data) and A7 == A8 == A9 (size oversample saturates at the same equilibrium under 4x cap). Phase A's 2x3 grid is empirically a 1x3 progression on `v4_clean_lt65_plus_nulls`.
+
+A0 wins, A0 vs A2 isolates the preprocessing pipeline as the dominant Phase A axis, and A2-A9 plateau at ~0.24-0.27 IoU. Phase A balancing-grid sweep confirms PR-12: once preprocessing has degraded calibration, no balancing scheme recovers it.
+
+Phase B uses the **canonical baseline_v1** checkpoint (all four SZA bins) rather than A0; A0 is best on lt65 alone but does not generalise.
+
+---
+
 ## Baseline_v1 Trained Run
 
 Job 56554 completed 2026-04-24 at `runs/exp_baseline_v1/20260424_185158/`.
@@ -335,6 +359,7 @@ Listed in `new-plan.txt` as TBD. Deferred.
 | `plan.md` | This file. Project state. |
 | `methods_draft.md` | Methods-section draft. |
 | `model_progression.md` | Phase A 2x3 grid + Phase B method sweep. |
+| `results.md` | Results-section draft (Phase A leaderboard, preprocessing impact, Phase B per-method per-bin headlines). Source-of-truth tables for `main.tex`. |
 | `iceberg-rework-README.md` | Project README with folder layout + tables. |
 | `refactor_plan.md` | 12-section repository design + audit. |
 | `reference/descriptive_stats_results_discussion.md` | Dataset stats narrative. |
@@ -405,3 +430,22 @@ ssh moosehead 'tail -f /mnt/research/.../iceberg-rework/logs/exp/ice_exp_<job_id
    - Whether to materialise variant manifests (`fisser_lt65_original`, `our_lt65`, `our_lt65_plus_nulls`).
    - Whether to start Phase B reporting on baseline_v1 results.
 7. The figure registry is the canonical place to add any new plot. Use `_fig_registry.write` for plots and `_fig_registry.write_table` for tables-as-PNGs.
+
+---
+
+## Pending: trim the script-check pack after Farias review
+
+The script-check pack at `iceberg-rework/script-check-README.md` was originally written to send all 23 per-script questions to the external reviewer (Farias). Five of those questions (Q1, Q7, Q15, Q16, Q17) have since been answered empirically in this project, with figures and CSVs under `paper-writing/figure_review/script_check_answers/<slug>/` and a written summary in `methods_draft.md` Section 2.14.
+
+Once Farias has finished reviewing the pack, do the following so future readers see only the open questions:
+
+1. In `iceberg-rework/script-check-README.md`, delete the bullet for each answered question (Q1, Q7, Q15, Q16, Q17) and its `*Pre-checked* ...` sub-bullet. Leave a one-line pointer at the section level (or in the README header) noting that the answered set is documented in `paper-writing/methods_draft.md` Section 2.14 and `paper-writing/figure_review/script_check_answers/`.
+2. In each affected production script, add a brief inline comment at the parameter that was checked, summarising the empirical justification. The five spots are:
+   - `iceberg-rework/scripts/threshold_tifs.py`, at `ic_threshold = 0.15`: `# Q1 sweep (n=23,981) confirmed 15% sits in the slow middle of the ic_frac ECDF; moving to 0.20 / 0.30 buys only a few percent. See paper-writing/figure_review/script_check_answers/q01_ic_cutoff_sweep/.`
+   - `iceberg-rework/scripts/otsu_threshold_tifs.py`, at `min_otsu_thresh = 0.10`: `# Q7 confirmed 0.10 floor: 6.1% of chips skip; raising to 0.15 jumps to 41% (would discard half the population). See .../q07_otsu_floor_distribution/.`
+   - `iceberg-rework/scripts/threshold_probs.py`, at `threshold = 0.22`: `# Q15 test-split sensitivity (n=171): F1 climbs to 0.528 at tau=0.90 vs 0.464 at 0.22 (delta +0.064). Calibration deferred until val probs exist. See .../q15_unet_threshold_f1/.`
+   - `iceberg-rework/scripts/otsu_probs.py`, at the `range_p < 0.01` flat-prob skip: `# Q16 confirmed: 0% would-skip at every cutoff in {0.005, 0.01, 0.02, 0.05}; guard is non-binding on this population. See .../q16_flat_prob_distribution/.`
+   - `iceberg-rework/scripts/otsu_probs.py`, at the no-floor branch: `# Q17 ruled out a 0.5 floor: 100% of chips have Otsu < 0.5; floor would activate everywhere and remove 22.5% of iceberg pixels. See .../q17_otsu_on_prob_floor/.`
+3. Keep the answer scripts under `iceberg-rework/scripts/script_check_answers/` and the artifact folders under `paper-writing/figure_review/script_check_answers/` so the reasoning is reproducible. The checklist row in `paper-writing/figure_review/figure_review_checklist.csv` for each answered slug stays at status `draft` with the headline finding in `needed_edits` until the figure is incorporated into the deck.
+
+Do NOT remove the answered questions from the README before the reviewer has read it; they are the asked-and-answered evidence the reviewer needs to see to know we did our own due diligence.

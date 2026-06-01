@@ -77,7 +77,7 @@ The sza_lt65 background of 0.285 reflects the environmental context of the Fisse
 
 ### Results
 
-The Fisser et al. (2024) ice coverage filter uses a fixed B08 threshold of 0.12 (0.22 uncorrected) in 10 km blocks, excluding blocks where more than 15% of pixels exceed the threshold. Applying an annotation-aware adaptation of this method at chip level (2.56 km), where annotated iceberg pixels are excluded from the IC calculation, produces the following counts of chips exceeding IC >= 15%:
+The Fisser et al. (2025) ice coverage filter (eq. 2) uses a fixed B08 threshold of 0.12 (0.22 uncorrected) in 10 km blocks, excluding blocks where more than 15% of pixels exceed the threshold. The 0.12 reflectance cutoff itself is inherited from Fisser et al. (2024); the 15% / 10 km block packaging is the Fisser 2025 contribution (Fisser 2024 used only a separate per-acquisition visual ~10% sea-ice exclusion). Applying an annotation-aware adaptation of this method at chip level (2.56 km), where annotated iceberg pixels are excluded from the IC calculation, produces the following counts of chips exceeding IC >= 15%:
 
 **Table 4.** Annotation-aware IC at chip level. IC is computed as the fraction of non-annotated pixels with B08 >= 0.22. "IC >= 15%" is the number of chips where the non-iceberg background exceeds the Fisser threshold.
 
@@ -100,13 +100,13 @@ These findings rule out a universal pixel-level masking strategy applied to all 
 
 #### 3.1 Annotation-Aware IC Computation
 
-Fisser et al. (2024) computed ice coverage (IC) by applying a fixed B08 reflectance threshold of 0.12 (corrected TOA reflectance) to 10 km squared blocks derived from the full Sentinel-2 tile (10,980 x 10,980 pixels at 10 m resolution). Blocks where IC exceeded 15% were excluded. We adapt this method to operate at the chip level (256 x 256 pixels, 2.56 x 2.56 km) because the training data consists of pre-tiled chips, and the parent Sentinel-2 tiles are not available for all chips (the Fisser et al. (2025) Mendeley dataset provides only the tiled chips, not the source tiles).
+Fisser et al. (2025), section 3.2 equation 2, computed ice coverage (IC) by applying a fixed B08 reflectance threshold of 0.12 (corrected TOA reflectance) to 10 km squared blocks derived from the full Sentinel-2 tile (10,980 x 10,980 pixels at 10 m resolution). Blocks where IC exceeded 15% were excluded. We adapt this method to operate at the chip level (256 x 256 pixels, 2.56 x 2.56 km) because the training data consists of pre-tiled chips, and the parent Sentinel-2 tiles are not available for all chips (the Fisser et al. (2025) Mendeley dataset provides only the tiled chips, not the source tiles).
 
 A direct application of Fisser's threshold at chip scale conflates iceberg signal with sea ice signal. At 10 km scale, even a large iceberg occupies less than 0.1% of the block, so icebergs do not inflate the IC metric. At chip scale, annotated icebergs can occupy 5 to 25% of the chip area (Table 3), which would cause the chip to fail IC regardless of actual sea ice presence. To address this, we exclude annotated iceberg pixels from the IC calculation:
 
     IC = count(B08 >= 0.22 AND pixel not in iceberg annotation) / count(pixels not in iceberg annotation)
 
-The threshold of 0.22 (uncorrected TOA reflectance) is equivalent to Fisser's 0.12 after accounting for the +1000 DN offset introduced by the Sentinel-2 processing baseline >= 4.0 (N0500/N0510). The chip_sentinel2.py tiling script converts DN to reflectance as DN x 1e-4 without subtracting this offset, so all reflectance values in the dataset are shifted by +0.10 relative to corrected reflectance. The 15% IC threshold is retained from Fisser et al. (2024).
+The threshold of 0.22 (uncorrected TOA reflectance) is equivalent to Fisser's 0.12 after accounting for the +1000 DN offset introduced by the Sentinel-2 processing baseline >= 4.0 (N0500/N0510). The chip_sentinel2.py tiling script converts DN to reflectance as DN x 1e-4 without subtracting this offset, so all reflectance values in the dataset are shifted by +0.10 relative to corrected reflectance. The 0.12 reflectance cutoff comes from Fisser et al. (2024); the 15% IC block-rejection threshold built on top of it comes from Fisser et al. (2025) eq. 2.
 
 This formulation is applied identically to both data sources. For the Fisser et al. (2025) chips (sza_lt65, N=398), the iceberg annotation mask is derived from the published pixel-level labels with shadow (class 2) merged into iceberg (class 1). For the Roboflow chips (sza_gt65, N=586), the annotation mask is derived from the COCO polygon annotations rasterized at 256 x 256 pixels. Merging shadow into iceberg ensures that Fisser's 3-class labels (ocean, iceberg, shadow) and Roboflow's 2-class labels (ocean, iceberg) define the annotation mask consistently across both sources.
 
@@ -137,7 +137,7 @@ We adopt a selective masking approach that modifies only training chips exceedin
 
 #### 3.4 Justification for 15% IC Threshold
 
-The 15% threshold is inherited directly from Fisser et al. (2024) Section 3.2 to maintain methodological comparability. It distinguishes chips where the non-iceberg background is dominated by open water (IC < 15%, median IC = 0.004 to 0.029 across the three gt65 bins) from chips where a substantial fraction of the background consists of sea ice or other bright contaminants (IC >= 15%, median IC = 0.29 to 0.39). The separation between these two populations is visible in the IC distribution: p25 values are near zero (0.0001 to 0.012) across all bins, while p90 values range from 0.247 to 0.975, indicating a long right tail of heavily contaminated chips rather than a gradual continuum.
+The 15% threshold is inherited directly from Fisser et al. (2025) Section 3.2 (eq. 2) to maintain methodological comparability. It distinguishes chips where the non-iceberg background is dominated by open water (IC < 15%, median IC = 0.004 to 0.029 across the three gt65 bins) from chips where a substantial fraction of the background consists of sea ice or other bright contaminants (IC >= 15%, median IC = 0.29 to 0.39). The separation between these two populations is visible in the IC distribution: p25 values are near zero (0.0001 to 0.012) across all bins, while p90 values range from 0.247 to 0.975, indicating a long right tail of heavily contaminated chips rather than a gradual continuum.
 
 #### 3.5 Justification for Masking Rather Than Discarding
 

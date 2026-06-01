@@ -1,5 +1,5 @@
 # File Paths: Moosehead + Local
-**Last updated:** 2026-05-03
+**Last updated:** 2026-05-05 (added 2026-05-05 follow-up runs)
 
 ---
 
@@ -62,6 +62,37 @@ per_iceberg/        per-pair CSVs (added 2026-05-03)
 manifest_stamp.json
 run_stamp.json
 ```
+
+---
+
+## 2026-05-05 follow-up: Phase A higher-SZA re-eval + backbone-comparison Phase B
+
+Three Slurm jobs evaluate the Phase A backbones and re-run Phase B against the v4_clean test split (228 chips, 57 per SZA bin). Full T1-T4 tables in [phase_a_higher_sza_t1_t4.md](phase_a_higher_sza_t1_t4.md).
+
+**Phase A re-eval** (Slurm 60293, UNet only, A0..A9 x 4 SZA bins):
+```
+runs/exp_A{0..9}_*/<canonical_ts>/re_eval_v4_clean/
+  test/<sza_bin>/UNet/{geotiffs/, gpkgs/, all_icebergs.gpkg, method_config.json, skipped_chips.csv}
+  per_iceberg/eval_per_iceberg_summary.csv
+```
+
+**A1 Phase B re-run** (Slurm 60296, six methods x 4 SZA bins):
+```
+runs/exp_A1_fisser_lt65_plus_nulls/20260429_234146/re_phase_b_v4_clean/
+  test/<sza_bin>/{TR, OT, UNet, UNet_TR, UNet_OT, UNet_CRF}/
+  evaluation/eval_summary.csv
+  per_iceberg/eval_per_iceberg_summary.csv
+```
+
+**A0 Phase B re-run** (Slurm 60297, same layout):
+```
+runs/exp_A0_fisser_lt65_original/20260428_094028/re_phase_b_v4_clean/
+  ... (same as A1)
+```
+
+Driver scripts: `iceberg-rework/scripts/re_eval_phase_a_all_sza.sh`, `re_phase_b_with_a0.sh`, `re_phase_b_with_a1.sh`. Slurm wrappers: `iceberg-rework/slurm/re_eval_phase_a.slurm`, `re_phase_b_a0.slurm`, `re_phase_b_a1.slurm`. All three Phase A backbones evaluated with `FORCE=1` to override `run_methods.sh`'s dataset-drift guard (intentional cross-manifest inference against the unifying v4_clean test split). Top-hat variants (`--with_tophat`) NOT included; would add 6 more `<METHOD>_TH` outputs per bin.
+
+Local mirrors of the per_iceberg summary CSVs are in `iceberg-rework/runs_summaries/exp_A*/<ts>/{re_eval_v4_clean,re_phase_b_v4_clean}/per_iceberg/eval_per_iceberg_summary.csv`.
 
 ---
 

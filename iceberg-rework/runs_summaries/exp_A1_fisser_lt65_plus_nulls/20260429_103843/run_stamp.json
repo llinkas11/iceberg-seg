@@ -1,0 +1,12 @@
+{
+  "experiment_id": "exp_A1_fisser_lt65_plus_nulls",
+  "baseline_id": "baseline_v1",
+  "config_sha": "2aff6bfafcc9d77772970619d6781058770faac132fe4ca7156e488f4702cc0d",
+  "run_utc": "2026-04-29T14:45:35+00:00",
+  "stages_run": [
+    "manifest",
+    "train",
+    "infer",
+    "evaluate"
+  ]
+}
